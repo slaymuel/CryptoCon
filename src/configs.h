@@ -57,4 +57,6 @@ inline ExchangeConfig BinanceFutures() {
     };
 }
 
+// TODO: Add configs for other exchanges (e.g., Coinbase, Kraken, etc.)
+
 } // namespace trade_connector
