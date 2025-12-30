@@ -7,14 +7,15 @@
 
 #include "rest/client.h"
 #include "websocket/client.h"
+#include "configs.h"
 
 int main() {
     std::string spot_api_key = "xFE3InwAv8mPtpQKZq6dorsahvb91gxpEvJSKuB1dbDL6X4Yy5GHOB5IMhdUtwhN";
     std::string spot_secret_key = "Sg9OzEuDdVpmb8QQNrMrBtj5FUNTLZC0SwlVsyH4lsKRxOnPAIg1bSIvrj1MTn3e";
     std::string future_api_key = "W249L82DXdkccN72iFAEVPuHWxhfPhJPVAEEdwNCsMfFF00k4pWJg5yQ4EqkjJxk";
     std::string future_secret_key = "x5ZeVuj4uCc2DHnGhBBpVQQv3Kfq8cYhlUlRNfncfPXeaxF9WPRWqrq2C9okR7CE";
-    //auto config = trade_connector::rest::BinanceFutures();
-    auto config = trade_connector::rest::BinanceSpot();
+    //auto config = trade_connector::BinanceFutures();
+    auto config = trade_connector::BinanceSpot();
     //trade_connector::rest::Client client("demo-fapi.binance.com", future_api_key, future_secret_key, config);
     trade_connector::rest::Client rest_client("testnet.binance.vision", spot_api_key, spot_secret_key, config);
     trade_connector::websocket::Client ws_client;
