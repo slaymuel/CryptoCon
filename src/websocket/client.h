@@ -12,7 +12,6 @@ namespace trade_connector::websocket {
 
 struct ConnectionData {
     std::string endpoint;
-    void (*callback)(std::string_view);
     std::unique_ptr<ix::WebSocket> ws;
 };
 
@@ -20,20 +19,29 @@ class Client {
 public:
 
     Client() = default;
+    // Delete copy constructor and assignment
+    Client(const Client&) = delete;
+    Client& operator=(const Client&) = delete;
+    
+    // Allow move operations
+    Client(Client&&) noexcept = delete;
+    Client& operator=(Client&&) noexcept = delete;
 
     ~Client() {
         disconnectAll();
     }
 
     /**
-     * @brief Connect to WebSocket endpoint with zero-overhead callback
+     * @brief Connect to WebSocket endpoint. Can be called multiple times to connect multiple endpoints.
      * 
      * @param callback Function pointer (use +[] for non-capturing lambdas)
      * @param host WebSocket host (e.g., "stream.binance.com:9443")
      * @param path WebSocket path (e.g., "/ws/btcusdt@trade")
      */
+
+    template<typename Callback>
     void connectEndpoint(
-        void(*callback)(std::string_view),
+        Callback callback,
         const std::string& host,
         const std::string& path
     ) {
@@ -43,7 +51,6 @@ public:
         
         auto conn_data = std::make_unique<ConnectionData>();
         conn_data->endpoint = url;
-        conn_data->callback = callback;
         conn_data->ws = std::make_unique<ix::WebSocket>();
         
         // Configure WebSocket
@@ -62,9 +69,7 @@ public:
                     case ix::WebSocketMessageType::Message:
                         // Zero-copy string_view - no allocation
                         try {
-                            if (callback) {
-                                callback(std::string_view(msg->str));
-                            }
+                            callback(std::string_view(msg->str));
                         } catch (const std::exception& e) {
                             std::cerr << "Error in callback for " << url 
                                      << ": " << e.what() << std::endl;

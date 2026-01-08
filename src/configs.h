@@ -1,7 +1,19 @@
 #pragma once
 
+#include <string_view>
+
 namespace trade_connector {
 
+enum class MarketType {
+    SPOT,
+    FUTURES
+};
+
+template<MarketType M>
+concept IsFutures = M == MarketType::FUTURES;
+
+template<MarketType M>
+concept IsSpot = M == MarketType::SPOT;
 enum class ProtocolType {
     JSON,
     SBE
@@ -13,49 +25,43 @@ enum class ProtocolType {
  * No virtual functions - zero overhead.
  * Users can create instances with their own endpoints.
  */
-struct ExchangeConfig {
-    std::string account_info;
-    std::string ping;
-    std::string server_time;
-    std::string exchange_info;
-    std::string depth;
-    std::string trades;
-    std::string order;
-    std::string listen_key;
-    ProtocolType default_protocol;
-    bool supports_quote_order_qty;
+template<MarketType M>
+struct BinanceConfig;
+
+template<>
+struct BinanceConfig<MarketType::SPOT>{
+    static constexpr const char* url = "api.binance.com";
+    static constexpr const char* test_url = "testnet.binance.vision";
+    static constexpr const char* account_info = "/api/v3/account";
+    static constexpr const char* ping = "/api/v3/ping";
+    static constexpr const char* server_time = "/api/v3/time";
+    static constexpr const char* exchange_info = "/api/v3/exchangeInfo";
+    static constexpr const char* depth = "/api/v3/depth";
+    static constexpr const char* trades = "/api/v3/trades";
+    static constexpr const char* order = "/api/v3/order";
+    static constexpr const char* listen_key = "/api/v3/userDataStream";
+    static constexpr const ProtocolType default_protocol = ProtocolType::JSON;
+    static constexpr const bool supports_quote_order_qty = true;
 };
 
-// Factory functions for built-in exchanges
-inline ExchangeConfig BinanceSpot() {
-    return {
-        "/api/v3/account",
-        "/api/v3/ping",
-        "/api/v3/time",
-        "/api/v3/exchangeInfo",
-        "/api/v3/depth",
-        "/api/v3/trades",
-        "/api/v3/order",
-        "/api/v3/userDataStream",
-        ProtocolType::JSON,
-        true
-    };
-}
-
-inline ExchangeConfig BinanceFutures() {
-    return {
-        "/fapi/v2/balance",
-        "/fapi/v1/ping",
-        "/fapi/v1/time",
-        "/fapi/v1/exchangeInfo",
-        "/fapi/v1/depth",
-        "/fapi/v1/trades",
-        "/fapi/v1/order",
-        "/fapi/v1/listenKey",
-        ProtocolType::JSON,
-        false
-    };
-}
+template<>
+struct BinanceConfig<MarketType::FUTURES>{
+    static constexpr const char* url = "fapi.binance.com";
+    static constexpr const char* test_url = "demo-fapi.binance.com";
+    static constexpr const char* account_info = "/fapi/v2/balance";
+    static constexpr const char* open_positions = "/fapi/v3/positionRisk";
+    //"/fapi/v2/positionRisk", // Gets all symbols' positions
+    static constexpr const char* ping = "/fapi/v1/ping";
+    static constexpr const char* server_time = "/fapi/v1/time";
+    static constexpr const char* exchange_info = "/fapi/v1/exchangeInfo";
+    static constexpr const char* depth = "/fapi/v1/depth";
+    static constexpr const char* trades = "/fapi/v1/trades";
+    static constexpr const char* order = "/fapi/v1/order";
+    static constexpr const char* listen_key = "/fapi/v1/listenKey";
+    static constexpr const char* leverage = "/fapi/v1/leverage";
+    static constexpr const ProtocolType default_protocol = ProtocolType::JSON;
+    static constexpr const bool supports_quote_order_qty = false;
+};
 
 // TODO: Add configs for other exchanges (e.g., Coinbase, Kraken, etc.)
 
