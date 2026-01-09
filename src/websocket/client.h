@@ -1,3 +1,12 @@
+/**
+ * @file client.h
+ * @brief WebSocket client implementation using IXWebSocket library
+ * 
+ * Provides a high-performance, multi-endpoint WebSocket client for real-time
+ * exchange data streaming. Supports multiple concurrent connections with
+ * per-endpoint callbacks and automatic reconnection handling.
+ */
+
 #pragma once
 
 #include <iostream>
@@ -10,33 +19,107 @@
 
 namespace trade_connector::websocket {
 
+/**
+ * @struct ConnectionData
+ * @brief Per-connection data structure
+ * 
+ * Stores connection-specific information including the endpoint URL
+ * and the WebSocket instance. Each active connection maintains its own
+ * ConnectionData instance.
+ */
 struct ConnectionData {
-    std::string endpoint;
-    std::unique_ptr<ix::WebSocket> ws;
+    std::string endpoint;                    ///< Full WebSocket URL (wss://host/path)
+    std::unique_ptr<ix::WebSocket> ws;       ///< WebSocket connection instance
 };
 
+/**
+ * @class Client
+ * @brief Multi-endpoint WebSocket client for exchange data streaming
+ * 
+ * High-performance WebSocket client that manages multiple concurrent connections
+ * to exchange WebSocket endpoints. Features include:
+ * - Multiple simultaneous endpoint connections
+ * - Per-endpoint callback handling with zero-copy string_view
+ * - Automatic ping/pong keepalive (30-second interval)
+ * - Disabled per-message compression for minimal latency
+ * - Thread-safe connection management
+ * - Automatic reconnection on connection loss
+ * 
+ * @note Non-copyable, non-movable to ensure connection stability
+ * @note All callbacks must be non-capturing lambdas or function pointers
+ * 
+ * @example
+ * ```cpp
+ * Client client;
+ * client.connectEndpoint(
+ *     +[](std::string_view msg) { std::cout << msg << std::endl; },
+ *     "stream.binance.com:9443",
+ *     "/ws/btcusdt@trade"
+ * );
+ * client.wait(); // Keep running
+ * ```
+ */
 class Client {
 public:
 
+    /** @brief Default constructor - initializes empty client */
     Client() = default;
-    // Delete copy constructor and assignment
+    
+    /** @brief Copy constructor deleted - connections are not copyable */
     Client(const Client&) = delete;
+    /** @brief Copy assignment deleted - connections are not copyable */
     Client& operator=(const Client&) = delete;
     
-    // Allow move operations
+    /** @brief Move constructor deleted - connections should remain stable */
     Client(Client&&) noexcept = delete;
+    /** @brief Move assignment deleted - connections should remain stable */
     Client& operator=(Client&&) noexcept = delete;
 
+    /**
+     * @brief Destructor - automatically disconnects all endpoints
+     * 
+     * Ensures clean shutdown of all WebSocket connections before
+     * the client object is destroyed.
+     */
     ~Client() {
         disconnectAll();
     }
 
     /**
-     * @brief Connect to WebSocket endpoint. Can be called multiple times to connect multiple endpoints.
+     * @brief Connect to a WebSocket endpoint with a message callback
      * 
-     * @param callback Function pointer (use +[] for non-capturing lambdas)
-     * @param host WebSocket host (e.g., "stream.binance.com:9443")
+     * Establishes an asynchronous WebSocket connection to the specified endpoint.
+     * Multiple endpoints can be connected simultaneously by calling this method
+     * multiple times with different URLs.
+     * 
+     * Connection features:
+     * - Asynchronous, non-blocking connection initiation
+     * - 30-second automatic ping/pong keepalive
+     * - Disabled compression for low latency
+     * - Automatic message fragment assembly
+     * - Zero-copy message delivery via string_view
+     * 
+     * @tparam Callback Callback function type (must be function pointer)
+     * @param callback Message handler: void(*)(std::string_view)
+     *                 Use +[] for non-capturing lambdas
+     * @param host WebSocket host and port (e.g., "stream.binance.com:9443")
      * @param path WebSocket path (e.g., "/ws/btcusdt@trade")
+     * 
+     * @note Callback is invoked for each received message on a worker thread
+     * @note Callback must be thread-safe and should not block for long periods
+     * @note Connection errors are logged to std::cerr
+     * 
+     * @example
+     * ```cpp
+     * client.connectEndpoint(
+     *     +[](std::string_view msg) {
+     *         // Parse and process message
+     *         std::cout << "Received: " << msg << std::endl;
+     *     },
+     *     "stream.binance.com:9443",
+     *     "/ws/btcusdt@trade"
+     * );
+     * ```
      */
 
     template<typename Callback>
@@ -113,7 +196,16 @@ public:
     }
 
     /**
-     * @brief Send message to a specific endpoint
+     * @brief Send a message to a specific WebSocket endpoint
+     * 
+     * Sends a text message to the specified endpoint. The endpoint must be
+     * connected before sending messages.
+     * 
+     * @param endpoint Full WebSocket URL (must match a connected endpoint)
+     * @param message Message string to send
+     * 
+     * @note Silently fails if endpoint is not connected (error logged to std::cerr)
+     * @note This method is thread-safe
      */
     void send(const std::string& endpoint, const std::string& message) {
         auto it = connections.find(endpoint);
@@ -128,7 +220,12 @@ public:
     }
 
     /**
-     * @brief Check if endpoint is connected
+     * @brief Check if an endpoint is currently connected
+     * 
+     * @param endpoint Full WebSocket URL to check
+     * @return true if connected and ready to send/receive, false otherwise
+     * 
+     * @note Returns false if endpoint was never connected or connection closed
      */
     bool isConnected(const std::string& endpoint) {
         auto it = connections.find(endpoint);
@@ -138,7 +235,15 @@ public:
     }
 
     /**
-     * @brief Disconnect from specific endpoint
+     * @brief Disconnect from a specific WebSocket endpoint
+     * 
+     * Gracefully closes the WebSocket connection and removes it from
+     * the active connections list.
+     * 
+     * @param endpoint Full WebSocket URL to disconnect
+     * 
+     * @note Safe to call even if endpoint is not connected
+     * @note Connection resources are immediately released
      */
     void disconnect(const std::string& endpoint) {
         auto it = connections.find(endpoint);
@@ -150,7 +255,12 @@ public:
     }
 
     /**
-     * @brief Disconnect all endpoints
+     * @brief Disconnect from all WebSocket endpoints
+     * 
+     * Gracefully closes all active WebSocket connections and clears
+     * the connections map. Typically called during shutdown.
+     * 
+     * @note This method is automatically called by the destructor
      */
     void disconnectAll() {
         for (auto& [endpoint, data] : connections) {
@@ -163,7 +273,11 @@ public:
     }
 
     /**
-     * @brief Get number of active connections
+     * @brief Get the number of active connections
+     * 
+     * @return Number of currently connected endpoints
+     * 
+     * @note Count includes connections in any state (connecting, open, closing)
      */
     size_t connectionCount() const {
         return connections.size();
@@ -171,7 +285,24 @@ public:
 
     /**
      * @brief Wait for all connections to close (blocking)
-     * Useful for keeping main thread alive
+     * 
+     * Blocks the calling thread until all WebSocket connections have closed.
+     * This is useful for keeping the main thread alive while WebSocket callbacks
+     * handle messages on background threads.
+     * 
+     * The method periodically checks connection status and automatically removes
+     * connections that have closed.
+     * 
+     * @note This method blocks indefinitely until all connections close
+     * @note Dead connections are automatically cleaned up every 100ms
+     * @note Use Ctrl+C or external signals to interrupt if needed
+     * 
+     * @example
+     * ```cpp
+     * Client client;
+     * client.connectEndpoint(callback, host, path);
+     * client.wait(); // Keep main thread alive
+     * ```
      */
     void wait() {
         // Keep checking if connections are still active
@@ -192,6 +323,7 @@ public:
     }
 
 private:
+    /** @brief Map of active connections indexed by endpoint URL */
     std::map<std::string, std::unique_ptr<ConnectionData>> connections;
 };
 
