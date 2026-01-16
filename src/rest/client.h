@@ -73,9 +73,10 @@ namespace trade_connector::rest {
  * auto response = rest_client.sendOrder(order_builder.build());
  * ```
  */
-template<MarketType M>
+template<template<MarketType> typename ExchangeConfig, MarketType M>
 class Client{
-    using Config = BinanceConfig<M>;
+    using Config = ExchangeConfig<M>;
+    using Headers = std::span<const std::pair<std::string, std::string>>;
 
 public:
 
@@ -97,9 +98,11 @@ public:
         const std::string& api_key, 
         const std::string& secret_key
     ) : 
-      host(host), api_key(api_key), secret_key(secret_key),
-      ssl_ctx(boost::asio::ssl::context::sslv23_client), stream(ioc, ssl_ctx) {
-
+      host(host), 
+      api_key(api_key), 
+      secret_key(secret_key),
+      ssl_ctx(boost::asio::ssl::context::sslv23_client), 
+      stream(ioc, ssl_ctx) {
         ssl_ctx.set_default_verify_paths();
         connect();
     }
@@ -120,8 +123,11 @@ public:
         const std::string& api_key, 
         const std::string& secret_key
     ) : 
-      host(Config::test_url), api_key(api_key), secret_key(secret_key),
-      ssl_ctx(boost::asio::ssl::context::sslv23_client), stream(ioc, ssl_ctx) {
+      host(Config::test_url), 
+      api_key(api_key), 
+      secret_key(secret_key),
+      ssl_ctx(boost::asio::ssl::context::sslv23_client), 
+      stream(ioc, ssl_ctx) {
 
         ssl_ctx.set_default_verify_paths();
         connect();
@@ -165,7 +171,7 @@ public:
      * @see closeListenKey() to invalidate the key
      */
     std::string createListenKey(){
-        std::vector<std::pair<std::string, std::string>> headers = {
+        std::pair<std::string, std::string> headers[] = {
             {"X-MBX-APIKEY", api_key}
         };
 
@@ -192,7 +198,7 @@ public:
      */
     std::string keepAliveListenKey(const std::string& listen_key){
         std::string target = std::string(Config::listen_key) + "?listenKey=" + listen_key;
-        std::vector<std::pair<std::string, std::string>> headers = {
+        std::pair<std::string, std::string> headers[] = {
             {"X-MBX-APIKEY", api_key}
         };
         return put(target, headers);
@@ -214,7 +220,7 @@ public:
      */
     std::string closeListenKey(const std::string& listen_key){
         std::string target = std::string(Config::listen_key) + "?listenKey=" + listen_key;
-        std::vector<std::pair<std::string, std::string>> headers = {
+        std::pair<std::string, std::string> headers[] = {
             {"X-MBX-APIKEY", api_key}
         };
         return del(target, headers);
@@ -243,7 +249,7 @@ public:
         std::string signature = sign(secret_key, query);
         std::string target = std::string(Config::account_info) + "?" + query + "&signature=" + signature;
         //std::string target = "/api/v3/account?" + query + "&signature=" + signature;
-        std::vector<std::pair<std::string, std::string>> headers = {
+        std::pair<std::string, std::string> headers[] = {
             {"X-MBX-APIKEY", api_key}
         };
 
@@ -273,7 +279,7 @@ public:
         std::string signature = sign(secret_key, query);
         std::string target = std::string(Config::open_positions) + "?" + query + "&signature=" + signature;
         //std::string target = "/fapi/v2/positionRisk?" + query + "&signature=" + signature;
-        std::vector<std::pair<std::string, std::string>> headers = {
+        std::pair<std::string, std::string> headers[] = {
             {"X-MBX-APIKEY", api_key}
         };
 
@@ -310,8 +316,7 @@ public:
      * @note Use to calibrate system clock if experiencing timestamp errors
      */
     std::string getServerTime(){
-        std::string target = Config::server_time;
-        return get(target);
+        return get(Config::server_time);
     }
 
     /**
@@ -331,8 +336,7 @@ public:
      * @note Essential for understanding trading constraints and symbol details
      */
     std::string getExchangeInfo(){
-        std::string target = Config::exchange_info;
-        return get(target);
+        return get(Config::exchange_info);
     }
 
     /**
@@ -420,8 +424,7 @@ public:
      */
 
     std::string sendOrder(const OrderParams<M>& params) {
-        std::string query = buildQuery(params);
-        return sendOrder(query);
+        return sendOrder(buildQuery(params));
     }
 
     /**
@@ -492,32 +495,44 @@ public:
      * @note Includes futures-specific fields (reduceOnly, positionSide)
      */
     std::string buildQuery(const OrderParams<MarketType::FUTURES>& params) {
-        std::string query = "symbol=" + params.symbol
-            + "&side=" + params.side
-            + "&type=" + params.type;
+        std::string query;
+        query.reserve(256); // Preallocate for performance
+        query.append("symbol=").
+            append(params.symbol).
+            append("&side=").
+            append(params.side).
+            append("&type=").
+            append(params.type);
         
         // Add quantity
         if (params.quantity > 0.0) {
-            query += "&quantity=" + std::to_string(params.quantity);
+            query.append("&quantity=");
+            appendNumber(query, params.quantity);
         }
         
         // Add price for LIMIT orders
         if (params.price > 0.0) {
-            query += "&price=" + std::to_string(params.price);
+            query.append("&price=");
+            appendNumber(query, params.price);
         }
         
         // Add timeInForce for LIMIT orders (not for MARKET)
         if (!params.time_in_force.empty() && params.type != "MARKET") {
-            query += "&timeInForce=" + params.time_in_force;
+            query.append("&timeInForce=").append(params.time_in_force);
         }
 
         // Add reduceOnly flag
         if (params.reduce_only) {
-            query += "&reduceOnly=true";
+            query.append("&reduceOnly=true");
+        }
+
+        if (!params.position_side.empty()) {
+            query.append("&positionSide=").append(params.position_side);
         }
 
         if (params.timestamp > 0) {
-            query += "&timestamp=" + std::to_string(params.timestamp);
+            query.append("&timestamp=");
+            appendNumber(query, params.timestamp);
         }
         return query;
     }
@@ -549,7 +564,7 @@ public:
         std::string signature = sign(secret_key, query);
         std::string target = "/fapi/v1/leverage?" + query + "&signature=" + signature;
         
-        std::vector<std::pair<std::string, std::string>> headers = {
+        std::pair<std::string, std::string> headers[] = {
             {"X-MBX-APIKEY", api_key}
         };
     
@@ -586,7 +601,7 @@ public:
         std::string signature = sign(secret_key, query);
         std::string target = "/fapi/v1/marginType?" + query + "&signature=" + signature;
         
-        std::vector<std::pair<std::string, std::string>> headers = {
+        std::pair<std::string, std::string> headers[] = {
             {"X-MBX-APIKEY", api_key}
         };
     
@@ -608,7 +623,7 @@ public:
     std::string sendOrder(std::string query) {
         std::string signature = sign(secret_key, query);
         std::string target = std::string(Config::order) + "?" + query + "&signature=" + signature;
-        std::vector<std::pair<std::string, std::string>> headers = {
+        std::pair<std::string, std::string> headers[] = {
             {"X-MBX-APIKEY", api_key}
         };
         
@@ -688,7 +703,7 @@ public:
      * @note Uses HTTP/1.1
      */
     std::string post(const std::string& target,
-              const std::vector<std::pair<std::string, std::string>>& headers = {},
+              Headers headers = {},
               const std::string& body = "") {
         // Build HTTP POST request
         RequestString req{
@@ -727,7 +742,7 @@ public:
      * @note Uses HTTP/1.1
      */
     std::string get(const std::string&  target,
-                    const std::vector<std::pair<std::string, std::string>>& headers = {}
+                    Headers headers = {}
     ) {
         // Build HTTP GET request
         // HTTP version 1.1 is represented by 11
@@ -762,7 +777,7 @@ public:
      * @note Uses HTTP/1.1
      */
     std::string put(const std::string& target,
-              const std::vector<std::pair<std::string, std::string>>& headers = {},
+              Headers headers = {},
               const std::string& body = "") {
         RequestString req{
             boost::beast::http::verb::put, target, 11
@@ -797,7 +812,7 @@ public:
      * @note Uses HTTP/1.1
      */
     std::string del(const std::string& target,
-              const std::vector<std::pair<std::string, std::string>>& headers = {}) {
+              Headers headers = {}) {
         RequestEmpty req{
             boost::beast::http::verb::delete_, target, 11
         };

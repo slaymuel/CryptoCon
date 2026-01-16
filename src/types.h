@@ -9,31 +9,9 @@
 
 #pragma once
 
-#include <simdjson.h>
 #include "configs.h"
 
 namespace trade_connector {
-
-/**
- * @typedef Json
- * @brief Alias for simdjson document result type
- * 
- * Represents the result of parsing a JSON document using the simdjson library.
- * This type is used for high-performance, zero-copy JSON parsing.
- */
-using Json = simdjson::simdjson_result<simdjson::fallback::ondemand::document>;
-
-/**
- * @typedef Callback
- * @brief Function pointer type for WebSocket message callbacks
- * 
- * Defines the signature for callback functions that process incoming
- * JSON messages from WebSocket connections. Must be a non-capturing lambda
- * or regular function pointer.
- * 
- * @param json Parsed JSON document from the WebSocket message
- */
-using Callback = void(*)(const Json&);
 
 /**
  * @struct OrderParams
