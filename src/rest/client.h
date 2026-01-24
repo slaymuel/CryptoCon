@@ -442,45 +442,104 @@ public:
      */
     std::string buildQuery(const OrderParams<MarketType::SPOT>& params) {
         std::string query;
-        query.reserve(256); // Preallocate for performance
-        query.append("symbol=").
-            append(params.symbol).
-            append("&side=").
-            append(params.side).
-            append("&type=").
-            append(params.type);
-        
-        // Add quantity OR quoteOrderQty (not both)
-        if (params.quantity > 0.0) {
-            query.append("&quantity=");
-            appendNumber(query, params.quantity);
-        } else if (params.quote_quantity > 0.0) {
-            query.append("&quoteOrderQty=");
-            appendNumber(query, params.quote_quantity);
+        query.reserve(256);
+
+        query.append("symbol=").append(params.symbol)
+            .append("&side=").append(sideToString[params.side])
+            .append("&type=").append(orderTypeToString[params.type]);
+
+        switch (params.type) {
+            case OrderType::LIMIT:
+                query.append("&timeInForce=").append(timeInForceToString[params.time_in_force]);
+                if (params.price > 0.0) {
+                    query.append("&price=");
+                    appendNumber(query, params.price);
+                }
+                if (params.quantity > 0.0) {
+                    query.append("&quantity=");
+                    appendNumber(query, params.quantity);
+                }
+                break;
+
+            case OrderType::MARKET:
+                query.append("&timeInForce=").append(timeInForceToString[params.time_in_force]);
+                if (params.quantity > 0.0) {
+                    query.append("&quantity=");
+                    appendNumber(query, params.quantity);
+                } else if (params.quote_quantity > 0.0) {
+                    query.append("&quoteOrderQty=");
+                    appendNumber(query, params.quote_quantity);
+                }
+                break;
+
+            case OrderType::OCO:
+                query.append("&timeInForce=").append(timeInForceToString[params.time_in_force]);
+                query.append("&price=");
+                appendNumber(query, params.price);
+                query.append("&stopPrice=");
+                appendNumber(query, params.stop_price);
+                query.append("&stopLimitPrice=");
+                appendNumber(query, params.stop_limit_price);
+                query.append("&stopLimitTimeInForce=");
+                query.append(timeInForceToString[params.stop_limit_time_in_force]);
+                if (params.quantity > 0.0) {
+                    query.append("&quantity=");
+                    appendNumber(query, params.quantity);
+                }
+                break;
+
+            default:
+                throw std::logic_error("Not implemented");
         }
-        
-        // Add price for LIMIT orders
-        if (params.price > 0.0) {
-            query.append("&price=");
-            appendNumber(query, params.price);
-        }
-        
-        // Add timeInForce for LIMIT orders (not for MARKET)
-        if (!params.time_in_force.empty() && params.type != "MARKET") {
-            query.append("&timeInForce=").append(params.time_in_force);
-        }
-        
-        if (params.timestamp > 0) {
-            query.append("&timestamp=");
-            appendNumber(query, params.timestamp);
-        }
-        else {
-            query.append("&timestamp=");
-            appendNumber(query, currentTimestamp());
-        }
+
+        // Always add timestamp
+        query.append("&timestamp=");
+        appendNumber(query, params.timestamp > 0 ? params.timestamp : currentTimestamp());
 
         return query;
     }
+
+    //std::string buildQuery(const OrderParams<MarketType::SPOT>& params) {
+    //    std::string query;
+    //    query.reserve(256); // Preallocate for performance
+    //    query.append("symbol=").
+    //        append(params.symbol).
+    //        append("&side=").
+    //        append(sideToString[params.side]).
+    //        append("&type=").
+    //        append(orderTypeToString[params.type]);
+    //    
+    //    // Add quantity OR quoteOrderQty (not both)
+    //    if (params.quantity > 0.0) {
+    //        query.append("&quantity=");
+    //        appendNumber(query, params.quantity);
+    //    } else if (params.quote_quantity > 0.0) {
+    //        query.append("&quoteOrderQty=");
+    //        appendNumber(query, params.quote_quantity);
+    //    }
+    //    
+    //    // Add price for LIMIT orders
+    //    if (params.price > 0.0) {
+    //        query.append("&price=");
+    //        appendNumber(query, params.price);
+    //    }
+    //    
+    //    // Add timeInForce for LIMIT orders (not for MARKET)
+    //    if (params.time_in_force != TimeInForce::GTC && params.type != OrderType::MARKET) {
+    //        query.append("&timeInForce=").append(timeInForceToString[params.time_in_force]);
+    //    }
+    //    
+    //    if (params.timestamp > 0) {
+    //        query.append("&timestamp=");
+    //        appendNumber(query, params.timestamp);
+    //    }
+    //    else {
+    //        query.append("&timestamp=");
+    //        appendNumber(query, currentTimestamp());
+    //    }
+//
+    //    return query;
+    //}
 
     /**
      * @brief Build query string from futures order parameters
@@ -500,9 +559,9 @@ public:
         query.append("symbol=").
             append(params.symbol).
             append("&side=").
-            append(params.side).
+            append(sideToString[params.side]).
             append("&type=").
-            append(params.type);
+            append(orderTypeToString[params.type]);
         
         // Add quantity
         if (params.quantity > 0.0) {
@@ -517,8 +576,8 @@ public:
         }
         
         // Add timeInForce for LIMIT orders (not for MARKET)
-        if (!params.time_in_force.empty() && params.type != "MARKET") {
-            query.append("&timeInForce=").append(params.time_in_force);
+        if (params.time_in_force != TimeInForce::GTC && params.type != OrderType::MARKET) {
+            query.append("&timeInForce=").append(timeInForceToString[params.time_in_force]);
         }
 
         // Add reduceOnly flag
@@ -526,8 +585,8 @@ public:
             query.append("&reduceOnly=true");
         }
 
-        if (!params.position_side.empty()) {
-            query.append("&positionSide=").append(params.position_side);
+        if (params.position_side != Side::NONE) {
+            query.append("&positionSide=").append(sideToString[params.position_side]);
         }
 
         if (params.timestamp > 0) {

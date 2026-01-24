@@ -62,7 +62,7 @@ public:
      * @param s Order side: "BUY" or "SELL"
      * @return Reference to this builder for method chaining
      */
-    OrderBuilder& side(std::string s) { params.side = std::move(s); return *this; }
+    OrderBuilder& side(Side s) { params.side = std::move(s); return *this; }
     
     /**
      * @brief Set limit price
@@ -71,6 +71,10 @@ public:
      */
     OrderBuilder& price(double p) { params.price = p; return *this; }
     
+    OrderBuilder& stopPrice(double sp) { params.stop_price = sp; return *this; }
+
+    OrderBuilder& stopLimitPrice(double slp) { params.stop_limit_price = slp; return *this; }
+
     /**
      * @brief Set order quantity
      * @param q Quantity in base asset (e.g., BTC amount for BTCUSDT)
@@ -83,7 +87,7 @@ public:
      * @param t Order type: "LIMIT", "MARKET", "STOP_LOSS", "TAKE_PROFIT", etc.
      * @return Reference to this builder for method chaining
      */
-    OrderBuilder& type(std::string t) { params.type = std::move(t); return *this; }
+    OrderBuilder& type(OrderType t) { params.type = std::move(t); return *this; }
     
     /**
      * @brief Set time in force policy
@@ -91,8 +95,10 @@ public:
      *            "FOK" (Fill or Kill), "GTX" (Good Till Crossing), "GTD" (Good Till Date)
      * @return Reference to this builder for method chaining
      */
-    OrderBuilder& timeInForce(std::string tif) { params.time_in_force = std::move(tif); return *this; }
+    OrderBuilder& timeInForce(TimeInForce tif) { params.time_in_force = std::move(tif); return *this; }
     
+    OrderBuilder& stopLimitTimeInForce(TimeInForce sltif) { params.stop_limit_time_in_force = std::move(sltif); return *this; }
+
     /**
      * @brief Set custom timestamp
      * @param ts Timestamp in milliseconds since epoch (0 = auto-generate)
@@ -122,7 +128,7 @@ public:
      * @return Reference to this builder for method chaining
      * @note Only available for futures markets. Required in hedge mode.
      */
-    OrderBuilder& positionSide(std::string ps) requires IsFutures<M> { params.position_side = std::move(ps); return *this; }
+    OrderBuilder& positionSide(Side ps) requires IsFutures<M> { params.position_side = std::move(ps); return *this; }
     
     /**
      * @brief Set leverage (FUTURES market only)

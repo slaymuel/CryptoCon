@@ -9,9 +9,67 @@
 
 #pragma once
 
+#include <map>
+#include <boost/beast/core.hpp>
+#include <boost/beast/http.hpp>
 #include "configs.h"
 
 namespace trade_connector {
+
+enum class Side{
+    BUY,
+    SELL,
+    LONG,
+    SHORT,
+    BOTH,
+    FLAT,
+    NONE
+};
+
+inline std::map<Side, std::string> sideToString = {
+    {Side::BUY, "BUY"},
+    {Side::SELL, "SELL"},
+    {Side::LONG, "LONG"},
+    {Side::SHORT, "SHORT"},
+    {Side::BOTH, "BOTH"},
+    {Side::FLAT, "FLAT"},
+    {Side::NONE, "NONE"}
+};
+
+enum class TimeInForce{
+    GTC, // Good Till Canceled
+    IOC, // Immediate Or Cancel
+    FOK // Fill Or Kill
+};
+
+inline std::map<TimeInForce, std::string> timeInForceToString = {
+    {TimeInForce::GTC, "GTC"},
+    {TimeInForce::IOC, "IOC"},
+    {TimeInForce::FOK, "FOK"}
+};
+
+enum class OrderType{
+    MARKET,
+    LIMIT,
+    STOP_LOSS_LIMIT,
+    STOP_LOSS,
+    TAKE_PROFIT_LIMIT,
+    TAKE_PROFIT,
+    LIMIT_MAKER,
+    OCO,
+    UNKNOWN
+};
+inline std::map<OrderType, std::string> orderTypeToString = {
+    {OrderType::MARKET, "MARKET"},
+    {OrderType::LIMIT, "LIMIT"},
+    {OrderType::STOP_LOSS_LIMIT, "STOP_LOSS_LIMIT"},
+    {OrderType::STOP_LOSS, "STOP_LOSS"},
+    {OrderType::TAKE_PROFIT_LIMIT, "TAKE_PROFIT_LIMIT"},
+    {OrderType::TAKE_PROFIT, "TAKE_PROFIT"},
+    {OrderType::LIMIT_MAKER, "LIMIT_MAKER"},
+    {OrderType::OCO, "OCO"},
+    {OrderType::UNKNOWN, "UNKNOWN"}
+};
 
 /**
  * @struct OrderParams
@@ -36,12 +94,15 @@ struct OrderParams;
 template<>
 struct OrderParams<MarketType::SPOT> {
     std::string symbol;              ///< Trading pair symbol (e.g., "BTCUSDT")
-    std::string side;                ///< Order side: "BUY" or "SELL"
-    std::string type;                ///< Order type: "LIMIT", "MARKET", "STOP_LOSS", etc.
+    Side side;                       ///< Order side: "BUY" or "SELL"
+    OrderType type;                 ///< Order type: MARKET, LIMIT, STOP_LOSS, etc.
     double price = 0.0;              ///< Limit price (required for LIMIT orders)
+    double stop_price = 0.0;         ///< Stop price (for STOP_LOSS, TAKE_PROFIT orders)
+    double stop_limit_price = 0.0;   ///< Stop limit price (for STOP_LOSS_LIMIT, TAKE_PROFIT_LIMIT)
     double quantity = 0.0;           ///< Base asset quantity to buy/sell
     double quote_quantity = 0.0;     ///< Quote asset quantity (alternative to quantity)
-    std::string time_in_force = ""; ///< Time in force: "GTC", "IOC", "FOK", "GTX", "GTD"
+    TimeInForce time_in_force = TimeInForce::GTC; ///< Time in force: "GTC", "IOC", "FOK", "GTX", "GTD"
+    TimeInForce stop_limit_time_in_force = TimeInForce::GTC; ///< Time in force for stop limit orders
     unsigned long timestamp = 0;     ///< Order timestamp in milliseconds (0 = auto-generate)
 };
 
@@ -55,13 +116,13 @@ struct OrderParams<MarketType::SPOT> {
 template<>
 struct OrderParams<MarketType::FUTURES> {
     std::string symbol;              ///< Trading pair symbol (e.g., "BTCUSDT")
-    std::string side;                ///< Order side: "BUY" or "SELL"
-    std::string type;                ///< Order type: "LIMIT", "MARKET", "STOP", "TAKE_PROFIT", etc.
+    Side side;                ///< Order side: "BUY" or "SELL"
+    OrderType type;                 ///< Order type: MARKET, LIMIT, STOP_LOSS, etc.
     double price = 0.0;              ///< Limit price (required for LIMIT orders)
     double quantity = 0.0;           ///< Contract quantity to buy/sell
-    std::string time_in_force = ""; ///< Time in force: "GTC", "IOC", "FOK", "GTX", "GTD"
+    TimeInForce time_in_force = TimeInForce::GTC; ///< Time in force: "GTC", "IOC", "FOK", "GTX", "GTD"
     bool reduce_only = false;        ///< If true, order will only reduce position size
-    std::string position_side = "";  ///< Position side: "BOTH", "LONG", or "SHORT" (hedge mode)
+    Side position_side = Side::NONE;  ///< Position side: "BOTH", "LONG", or "SHORT" (hedge mode)
     unsigned long timestamp = 0;     ///< Order timestamp in milliseconds (0 = auto-generate)
 };
 
