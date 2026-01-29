@@ -92,6 +92,7 @@ struct BinanceConfig<MarketType::SPOT>{
     static constexpr const char* depth = "/api/v3/depth";                    ///< Order book depth endpoint
     static constexpr const char* trades = "/api/v3/trades";                  ///< Recent trades endpoint
     static constexpr const char* order = "/api/v3/order";                    ///< Order placement/query/cancel endpoint
+    static constexpr const char* oco = "/api/v3/order/oco";                ///< OCO order endpoint
     static constexpr const char* listen_key = "/api/v3/userDataStream";      ///< User data stream (WebSocket) endpoint
     static constexpr const ProtocolType default_protocol = ProtocolType::JSON; ///< Default communication protocol
     static constexpr const bool supports_quote_order_qty = true;              ///< Supports quoteOrderQty parameter

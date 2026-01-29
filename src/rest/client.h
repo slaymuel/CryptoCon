@@ -73,13 +73,17 @@ namespace trade_connector::rest {
  * auto response = rest_client.sendOrder(order_builder.build());
  * ```
  */
-template<template<MarketType> typename ExchangeConfig, MarketType M>
+template<
+    template<MarketType> typename ExchangeConfig, 
+    MarketType M
+>
 class Client{
     using Config = ExchangeConfig<M>;
     using Headers = std::span<const std::pair<std::string, std::string>>;
 
 public:
 
+    static void null_logger(const std::string&) {}
     /**
      * @brief Construct REST client with custom host
      * 
@@ -96,13 +100,16 @@ public:
     Client(
         const std::string& host, 
         const std::string& api_key, 
-        const std::string& secret_key
+        const std::string& secret_key,
+        std::function<void(const std::string&)> logger = null_logger
+        
     ) : 
       host(host), 
       api_key(api_key), 
       secret_key(secret_key),
       ssl_ctx(boost::asio::ssl::context::sslv23_client), 
-      stream(ioc, ssl_ctx) {
+      stream(ioc, ssl_ctx),
+      logger(logger) {
         ssl_ctx.set_default_verify_paths();
         connect();
     }
@@ -121,13 +128,15 @@ public:
      */
     Client(
         const std::string& api_key, 
-        const std::string& secret_key
+        const std::string& secret_key,
+        std::function<void(const std::string&)> logger = null_logger
     ) : 
       host(Config::test_url), 
       api_key(api_key), 
       secret_key(secret_key),
       ssl_ctx(boost::asio::ssl::context::sslv23_client), 
-      stream(ioc, ssl_ctx) {
+      stream(ioc, ssl_ctx),
+      logger(logger) {
 
         ssl_ctx.set_default_verify_paths();
         connect();
@@ -423,8 +432,42 @@ public:
      * ```
      */
 
+    template<typename T>
+    std::string sendOrder(const T& params) {
+        // buildquery also templated since now params is different for oco, market, limit etc
+        std::string query = buildQuery(params);
+        std::string signature = sign(secret_key, query);
+        auto endpoint = (params.type == OrderType::OCO) ? Config::oco : Config::order;
+        std::string target = std::string(endpoint) + "?" + query + "&signature=" + signature;
+        return sendOrder(target);
+    }
+
     std::string sendOrder(const OrderParams<M>& params) {
-        return sendOrder(buildQuery(params));
+        std::string query = buildQuery(params);
+        std::string signature = sign(secret_key, query);
+        auto endpoint = (params.type == OrderType::OCO) ? Config::oco : Config::order;
+        std::string target = std::string(endpoint) + "?" + query + "&signature=" + signature;
+        return sendOrder(target);
+    }
+
+    /**
+     * @brief Send order using raw query string
+     * 
+     * Internal method that signs and sends a pre-constructed query string.
+     * Used by the public sendOrder(OrderParams) method after building the query.
+     * 
+     * @param query Pre-constructed URL-encoded query string (without signature)
+     * @return JSON string containing order response
+     * 
+     * @note Automatically adds signature to the query
+     * @note Requires valid API key in headers
+     */
+    std::string sendOrder(std::string target) {
+        std::pair<std::string, std::string> headers[] = {
+            {"X-MBX-APIKEY", api_key}
+        };
+        
+        return post(target, headers);
     }
 
     /**
@@ -445,11 +488,11 @@ public:
         query.reserve(256);
 
         query.append("symbol=").append(params.symbol)
-            .append("&side=").append(sideToString[params.side])
-            .append("&type=").append(orderTypeToString[params.type]);
-
+             .append("&side=").append(sideToString[params.side]);
+            
         switch (params.type) {
             case OrderType::LIMIT:
+                query.append("&type=").append(orderTypeToString[params.type]);
                 query.append("&timeInForce=").append(timeInForceToString[params.time_in_force]);
                 if (params.price > 0.0) {
                     query.append("&price=");
@@ -460,8 +503,9 @@ public:
                     appendNumber(query, params.quantity);
                 }
                 break;
-
+                
             case OrderType::MARKET:
+                query.append("&type=").append(orderTypeToString[params.type]);
                 query.append("&timeInForce=").append(timeInForceToString[params.time_in_force]);
                 if (params.quantity > 0.0) {
                     query.append("&quantity=");
@@ -472,8 +516,52 @@ public:
                 }
                 break;
 
-            case OrderType::OCO:
+            case OrderType::STOP_LOSS:
+                query.append("&type=").append(orderTypeToString[params.type]);
+                query.append("&stopPrice=");
+                appendNumber(query, params.stop_price);
+                if (params.quantity > 0.0) {
+                    query.append("&quantity=");
+                    appendNumber(query, params.quantity);
+                }
+                break;
+
+            case OrderType::STOP_LOSS_LIMIT:
+                query.append("&type=").append(orderTypeToString[params.type]);
+                query.append("&stopPrice=");
+                appendNumber(query, params.stop_price);
+                query.append("&price=");
+                appendNumber(query, params.price);
                 query.append("&timeInForce=").append(timeInForceToString[params.time_in_force]);
+                if (params.quantity > 0.0) {
+                    query.append("&quantity=");
+                    appendNumber(query, params.quantity);
+                }
+                break;
+
+            case OrderType::TAKE_PROFIT:
+                query.append("&type=").append(orderTypeToString[params.type]);
+                query.append("&stopPrice=");
+                appendNumber(query, params.stop_price);
+                if (params.quantity > 0.0) {
+                    query.append("&quantity=");
+                    appendNumber(query, params.quantity);
+                }
+                break;
+            case OrderType::TAKE_PROFIT_LIMIT:
+                query.append("&type=").append(orderTypeToString[params.type]);
+                query.append("&stopPrice=");
+                appendNumber(query, params.stop_price);
+                query.append("&price=");
+                appendNumber(query, params.price);
+                query.append("&timeInForce=").append(timeInForceToString[params.time_in_force]);
+                if (params.quantity > 0.0) {
+                    query.append("&quantity=");
+                    appendNumber(query, params.quantity);
+                }
+                break;
+                
+            case OrderType::OCO:
                 query.append("&price=");
                 appendNumber(query, params.price);
                 query.append("&stopPrice=");
@@ -495,7 +583,6 @@ public:
         // Always add timestamp
         query.append("&timestamp=");
         appendNumber(query, params.timestamp > 0 ? params.timestamp : currentTimestamp());
-
         return query;
     }
 
@@ -668,28 +755,6 @@ public:
     }
 
     /**
-     * @brief Send order using raw query string
-     * 
-     * Internal method that signs and sends a pre-constructed query string.
-     * Used by the public sendOrder(OrderParams) method after building the query.
-     * 
-     * @param query Pre-constructed URL-encoded query string (without signature)
-     * @return JSON string containing order response
-     * 
-     * @note Automatically adds signature to the query
-     * @note Requires valid API key in headers
-     */
-    std::string sendOrder(std::string query) {
-        std::string signature = sign(secret_key, query);
-        std::string target = std::string(Config::order) + "?" + query + "&signature=" + signature;
-        std::pair<std::string, std::string> headers[] = {
-            {"X-MBX-APIKEY", api_key}
-        };
-        
-        return post(target, headers);
-    }
-
-    /**
      * @brief Read HTTP response from the persistent connection
      * 
      * Reads the complete HTTP response including headers and body from the
@@ -778,7 +843,7 @@ public:
     
         for (auto& h : headers)
             req.set(h.first, h.second);
-
+        logger(target);
         // Send request
         writeToStream<RequestString>(req);
     
@@ -933,6 +998,7 @@ private:
     boost::asio::io_context ioc;    ///< Boost.Asio I/O context for async operations
     boost::asio::ssl::context ssl_ctx;  ///< SSL context with system certificate store
     boost::asio::ssl::stream<boost::beast::tcp_stream> stream;  ///< Persistent SSL/TLS stream
+    std::function<void(const std::string&)> logger;                  ///< Logger instance for logging messages
 };
 
 } // namespace trade_connector::rest

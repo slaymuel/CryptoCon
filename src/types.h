@@ -56,6 +56,7 @@ enum class OrderType{
     TAKE_PROFIT_LIMIT,
     TAKE_PROFIT,
     LIMIT_MAKER,
+    CANCEL,
     OCO,
     UNKNOWN
 };
@@ -67,6 +68,7 @@ inline std::map<OrderType, std::string> orderTypeToString = {
     {OrderType::TAKE_PROFIT_LIMIT, "TAKE_PROFIT_LIMIT"},
     {OrderType::TAKE_PROFIT, "TAKE_PROFIT"},
     {OrderType::LIMIT_MAKER, "LIMIT_MAKER"},
+    {OrderType::CANCEL, "CANCEL"},
     {OrderType::OCO, "OCO"},
     {OrderType::UNKNOWN, "UNKNOWN"}
 };
@@ -91,6 +93,7 @@ struct OrderParams;
  * Contains all parameters needed to place orders on spot markets.
  * Supports both base quantity and quote quantity order types.
  */
+ // Create OrderParams for simple, stop loss, take profit, oco etc in addition to STOP, FUTURES
 template<>
 struct OrderParams<MarketType::SPOT> {
     std::string symbol;              ///< Trading pair symbol (e.g., "BTCUSDT")
@@ -99,6 +102,8 @@ struct OrderParams<MarketType::SPOT> {
     double price = 0.0;              ///< Limit price (required for LIMIT orders)
     double stop_price = 0.0;         ///< Stop price (for STOP_LOSS, TAKE_PROFIT orders)
     double stop_limit_price = 0.0;   ///< Stop limit price (for STOP_LOSS_LIMIT, TAKE_PROFIT_LIMIT)
+    std::string limitClientOrderId = "";
+    std::string stopClientOrderId = "";
     double quantity = 0.0;           ///< Base asset quantity to buy/sell
     double quote_quantity = 0.0;     ///< Quote asset quantity (alternative to quantity)
     TimeInForce time_in_force = TimeInForce::GTC; ///< Time in force: "GTC", "IOC", "FOK", "GTX", "GTD"
