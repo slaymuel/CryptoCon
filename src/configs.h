@@ -86,6 +86,7 @@ struct BinanceConfig<MarketType::SPOT>{
     static constexpr const char* url = "api.binance.com";                    ///< Production REST API host
     static constexpr const char* test_url = "testnet.binance.vision";        ///< Testnet REST API host
     static constexpr const char* account_info = "/api/v3/account";           ///< Account information endpoint
+    static constexpr const char* open_orders = "/api/v3/openOrders";         ///< Open orders endpoint
     static constexpr const char* ping = "/api/v3/ping";                      ///< Test connectivity endpoint
     static constexpr const char* server_time = "/api/v3/time";               ///< Server time endpoint
     static constexpr const char* exchange_info = "/api/v3/exchangeInfo";     ///< Exchange trading rules and symbols

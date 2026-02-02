@@ -348,6 +348,34 @@ public:
         return get(Config::exchange_info);
     }
 
+    std::string getOpenOrders() requires(IsSpot<M>){
+        std::string query = "timestamp=" + std::to_string(currentTimestamp())
+                  + "&recvWindow=5000";
+
+        std::string signature = sign(secret_key, query);
+        std::string target = std::string(Config::open_orders) + "?" + query + "&signature=" + signature;
+        //std::string target = "/api/v3/openOrders?" + query + "&signature=" + signature;
+        std::pair<std::string, std::string> headers[] = {
+            {"X-MBX-APIKEY", api_key}
+        };
+
+        return get(target, headers);
+    }
+
+    void cancelAllOpenOrders() requires(IsSpot<M>){
+        auto open_orders = getOpenOrders();
+
+        simdjson::ondemand::parser parser;
+        simdjson::padded_string json_orders(open_orders);
+        auto orders_doc = parser.iterate(json_orders);
+        auto orders = orders_doc.get_array().value();
+        for (auto order : orders) {
+            auto symbol = order["symbol"].get_string().value();
+            uint64_t order_id = order["orderId"].get_uint64().value();
+            cancelOrder(symbol, order_id);
+        }
+    }
+
     /**
      * @brief Get order book depth for a symbol
      * 
@@ -442,12 +470,12 @@ public:
         return sendOrder(target);
     }
 
-    std::string sendOrder(const OrderParams<M>& params) {
+    std::string sendOrder(const OrderParams<M>& params, Error& error = dummy_error) {
         std::string query = buildQuery(params);
         std::string signature = sign(secret_key, query);
         auto endpoint = (params.type == OrderType::OCO) ? Config::oco : Config::order;
         std::string target = std::string(endpoint) + "?" + query + "&signature=" + signature;
-        return sendOrder(target);
+        return sendOrder(target, error);
     }
 
     /**
@@ -462,12 +490,12 @@ public:
      * @note Automatically adds signature to the query
      * @note Requires valid API key in headers
      */
-    std::string sendOrder(std::string target) {
+    std::string sendOrder(std::string target, Error& error = dummy_error) {
         std::pair<std::string, std::string> headers[] = {
             {"X-MBX-APIKEY", api_key}
         };
         
-        return post(target, headers);
+        return post(target, headers, "", error);
     }
 
     /**
@@ -489,24 +517,23 @@ public:
 
         query.append("symbol=").append(params.symbol)
              .append("&side=").append(sideToString[params.side]);
-            
+        if (!params.new_client_order_id.empty()) {
+            query.append("&newClientOrderId=").append(params.new_client_order_id);
+        }
         switch (params.type) {
             case OrderType::LIMIT:
                 query.append("&type=").append(orderTypeToString[params.type]);
                 query.append("&timeInForce=").append(timeInForceToString[params.time_in_force]);
-                if (params.price > 0.0) {
-                    query.append("&price=");
-                    appendNumber(query, params.price);
-                }
-                if (params.quantity > 0.0) {
-                    query.append("&quantity=");
-                    appendNumber(query, params.quantity);
-                }
+
+                query.append("&price=");
+                appendNumber(query, params.price);
+
+                query.append("&quantity=");
+                appendNumber(query, params.quantity);
                 break;
                 
             case OrderType::MARKET:
                 query.append("&type=").append(orderTypeToString[params.type]);
-                query.append("&timeInForce=").append(timeInForceToString[params.time_in_force]);
                 if (params.quantity > 0.0) {
                     query.append("&quantity=");
                     appendNumber(query, params.quantity);
@@ -684,6 +711,41 @@ public:
     }
 
     /**
+    * @brief Cancel an active order
+    * 
+    * Cancels an order on the exchange by order ID or client order ID.
+    * 
+    * @param symbol Trading pair symbol (e.g., "BTCUSDT")
+    * @param order_id (optional) Exchange order ID
+    * @param orig_client_order_id (optional) Client order ID
+    * @return JSON string with cancel result
+    * 
+    * @note Requires valid API key and signature
+    * @note At least one of order_id or orig_client_order_id must be provided
+    */
+    std::string cancelOrder(
+        const std::string_view& symbol,
+        uint64_t order_id,
+        Error& error = dummy_error
+    ) {
+        std::string query;
+        query.reserve(256); // Preallocate for performance
+        query.append("symbol=").append(symbol)
+             .append("&timestamp=").append(std::to_string(currentTimestamp()))
+             .append("&orderId=");
+        appendNumber(query, order_id);
+
+        std::string signature = sign(secret_key, query);
+        std::string target = std::string(Config::order) + "?" + query + "&signature=" + signature;
+
+        std::pair<std::string, std::string> headers[] = {
+            {"X-MBX-APIKEY", api_key}
+        };
+
+        return del(target, headers, error);
+    }
+
+    /**
      * @brief Change leverage for a symbol (FUTURES only)
      * 
      * Adjusts the leverage multiplier for a specific trading symbol.
@@ -766,13 +828,17 @@ public:
      * @note Automatically attempts reconnection on connection failure
      * @note Errors are logged to std::cout
      */
-    std::string readFromStream() {
+    std::string readFromStream(
+        Error& error = dummy_error
+    ) {
         boost::beast::error_code ec;
         boost::beast::flat_buffer buffer;
         boost::beast::http::response<boost::beast::http::string_body> res;
         boost::beast::http::read(stream, buffer, res, ec);
 
         if (ec) {
+            std::string error_message = "Error reading from stream: " + ec.message();
+            error = Error(error_message, 1);
             std::cout << "Error reading from stream: " << ec.message() 
               << " [" << ec.category().name() 
               << ":" << ec.value() << "]" << std::endl;
@@ -786,11 +852,16 @@ public:
     }
 
     template<typename RequestType>
-    void writeToStream(RequestType& request) {
+    void writeToStream(
+        RequestType& request,
+        Error& error = dummy_error
+    ) {
         boost::beast::error_code ec;
         boost::beast::http::write(stream, request, ec);
 
         if (ec) {
+            std::string error_message = "Error writing to stream: " + ec.message();
+            error = Error(error_message, 2);
             std::cout << "Error writing to stream: " << ec.message() 
               << " [" << ec.category().name() 
               << ":" << ec.value() << "]" << std::endl;
@@ -826,9 +897,12 @@ public:
      * @note Automatically sets Host, User-Agent, and Connection headers
      * @note Uses HTTP/1.1
      */
-    std::string post(const std::string& target,
-              Headers headers = {},
-              const std::string& body = "") {
+    std::string post(
+        const std::string& target,
+        Headers headers = {},
+        const std::string& body = "",
+        Error& error = dummy_error
+    ) {
         // Build HTTP POST request
         RequestString req{
             boost::beast::http::verb::post, target, 
@@ -843,12 +917,14 @@ public:
     
         for (auto& h : headers)
             req.set(h.first, h.second);
-        logger(target);
+
+        logger("POST " + target + " Body: " + body);
+
         // Send request
-        writeToStream<RequestString>(req);
+        writeToStream<RequestString>(req, error);
     
         // Receive response
-        auto result = readFromStream();
+        auto result = readFromStream(error);
         return result;
     }
 
@@ -865,8 +941,10 @@ public:
      * @note Automatically sets Host, User-Agent, and Connection headers
      * @note Uses HTTP/1.1
      */
-    std::string get(const std::string&  target,
-                    Headers headers = {}
+    std::string get(
+        const std::string&  target,
+        Headers headers = {},
+        Error& error = dummy_error
     ) {
         // Build HTTP GET request
         // HTTP version 1.1 is represented by 11
@@ -879,10 +957,10 @@ public:
             req.set(h.first, h.second);
 
         // Send request
-        writeToStream<RequestEmpty>(req);
+        writeToStream<RequestEmpty>(req, error);
     
         // Receive response
-        auto result = readFromStream();
+        auto result = readFromStream(error);
         return result;
     }
 
@@ -900,9 +978,12 @@ public:
      * @note Automatically sets Host, User-Agent, and Connection headers
      * @note Uses HTTP/1.1
      */
-    std::string put(const std::string& target,
-              Headers headers = {},
-              const std::string& body = "") {
+    std::string put(
+        const std::string& target,
+        Headers headers = {},
+        const std::string& body = "",
+        Error& error = dummy_error
+    ) {
         RequestString req{
             boost::beast::http::verb::put, target, 11
         };
@@ -916,9 +997,9 @@ public:
         for (auto& h : headers)
             req.set(h.first, h.second);
 
-        writeToStream<RequestString>(req);
+        writeToStream<RequestString>(req, error);
     
-        auto result = readFromStream();
+        auto result = readFromStream(error);
         return result;
     }
 
@@ -930,13 +1011,17 @@ public:
      * 
      * @param target Request target/path
      * @param headers Optional custom headers
+     * @param error Error object for capturing errors
      * @return Response body as string
      * 
      * @note Automatically sets Host, User-Agent, and Connection headers
      * @note Uses HTTP/1.1
      */
-    std::string del(const std::string& target,
-              Headers headers = {}) {
+    std::string del(
+        const std::string& target,
+        Headers headers = {},
+        Error& error = dummy_error
+    ) {
         RequestEmpty req{
             boost::beast::http::verb::delete_, target, 11
         };
@@ -948,9 +1033,9 @@ public:
         for (auto& h : headers)
             req.set(h.first, h.second);
 
-        writeToStream<RequestEmpty>(req);
+        writeToStream<RequestEmpty>(req, error);
     
-        auto result = readFromStream();
+        auto result = readFromStream(error);
         return result;
     }
 

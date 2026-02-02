@@ -89,6 +89,7 @@ public:
      */
     OrderBuilder& type(OrderType t) { params.type = std::move(t); return *this; }
     
+    OrderBuilder& newClientOrderId(const std::string& id) { params.new_client_order_id = id; return *this; }
     /**
      * @brief Set time in force policy
      * @param tif Time in force: "GTC" (Good Till Cancel), "IOC" (Immediate or Cancel),

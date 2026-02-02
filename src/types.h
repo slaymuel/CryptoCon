@@ -16,6 +16,29 @@
 
 namespace trade_connector {
 
+    
+class Error {
+    // Error codes:
+    // 0 = No error
+    // 1 = Stream read error
+    // 2 = Stream write error
+public:
+    Error() : code_(0), message_("") {}
+    Error(const std::string& message, int value = 0) 
+        : code_(value == 0 ? 1 : value), 
+          message_(message) {}
+
+    explicit operator bool() const { return code_ != 0; }
+    int code() const { return code_; }
+    const std::string& message() const { return message_; }
+    
+private:
+    int code_;               ///< Error code
+    std::string message_;    ///< Error message
+};
+
+inline Error dummy_error; // A dummy error object for default parameters
+
 enum class Side{
     BUY,
     SELL,
@@ -102,8 +125,9 @@ struct OrderParams<MarketType::SPOT> {
     double price = 0.0;              ///< Limit price (required for LIMIT orders)
     double stop_price = 0.0;         ///< Stop price (for STOP_LOSS, TAKE_PROFIT orders)
     double stop_limit_price = 0.0;   ///< Stop limit price (for STOP_LOSS_LIMIT, TAKE_PROFIT_LIMIT)
-    std::string limitClientOrderId = "";
-    std::string stopClientOrderId = "";
+    std::string new_client_order_id = "";  ///< Optional client order ID
+    std::string limit_client_order_id = "";
+    std::string stop_client_order_id = "";
     double quantity = 0.0;           ///< Base asset quantity to buy/sell
     double quote_quantity = 0.0;     ///< Quote asset quantity (alternative to quantity)
     TimeInForce time_in_force = TimeInForce::GTC; ///< Time in force: "GTC", "IOC", "FOK", "GTX", "GTD"
@@ -125,6 +149,7 @@ struct OrderParams<MarketType::FUTURES> {
     OrderType type;                 ///< Order type: MARKET, LIMIT, STOP_LOSS, etc.
     double price = 0.0;              ///< Limit price (required for LIMIT orders)
     double quantity = 0.0;           ///< Contract quantity to buy/sell
+    std::string new_client_order_id = "";  ///< Optional client order ID
     TimeInForce time_in_force = TimeInForce::GTC; ///< Time in force: "GTC", "IOC", "FOK", "GTX", "GTD"
     bool reduce_only = false;        ///< If true, order will only reduce position size
     Side position_side = Side::NONE;  ///< Position side: "BOTH", "LONG", or "SHORT" (hedge mode)
