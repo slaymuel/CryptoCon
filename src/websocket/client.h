@@ -15,7 +15,10 @@
 #include <memory>
 #include <thread>
 #include <chrono>
+#include <cstdint>
+#include <functional>
 #include <ixwebsocket/IXWebSocket.h>
+#include "../utils/utils.h"
 
 namespace trade_connector::websocket {
 
@@ -60,19 +63,24 @@ struct ConnectionData {
  * ```
  */
 class Client {
+    
 public:
+    
+    static void null_logger(const std::string&) {}
 
     /** @brief Default constructor - initializes empty client */
-    Client() = default;
+    Client(
+        const std::string& api_key, 
+        const std::string& secret_key,
+        std::function<void(const std::string&)> logger = null_logger
+    ) : api_key(api_key), secret_key(secret_key), logger(logger) {};
     
-    /** @brief Copy constructor deleted - connections are not copyable */
+
     Client(const Client&) = delete;
-    /** @brief Copy assignment deleted - connections are not copyable */
     Client& operator=(const Client&) = delete;
     
-    /** @brief Move constructor deleted - connections should remain stable */
+    /** @brief Could implement these later if needed */
     Client(Client&&) noexcept = delete;
-    /** @brief Move assignment deleted - connections should remain stable */
     Client& operator=(Client&&) noexcept = delete;
 
     /**
@@ -122,77 +130,127 @@ public:
      * ```
      */
 
-    template<typename Callback>
+    template<typename Callback, typename OnOpen = std::function<void(ix::WebSocket&, const std::string&)>>
     void connectEndpoint(
         Callback callback,
         const std::string& host,
-        const std::string& path
+        const std::string& path,
+        OnOpen on_open = [](ix::WebSocket&, const std::string&) {}
     ) {
-        std::string url = "wss://" + host + path;
-        
-        std::cout << "Connecting to " << url << std::endl;
-        
-        auto conn_data = std::make_unique<ConnectionData>();
-        conn_data->endpoint = url;
-        conn_data->ws = std::make_unique<ix::WebSocket>();
-        
-        // Configure WebSocket
-        conn_data->ws->setUrl(url);
-        
-        // Set heartbeat (ping interval) - use setPingInterval instead
-        conn_data->ws->setPingInterval(30);
-        
-        // Disable per-message deflate compression for lower latency
-        conn_data->ws->disablePerMessageDeflate();
-        
-        // Set message callback - captures callback by value (function pointer)
-        conn_data->ws->setOnMessageCallback(
-            [callback, url](const ix::WebSocketMessagePtr& msg) {
-                switch (msg->type) {
-                    case ix::WebSocketMessageType::Message:
-                        // Zero-copy string_view - no allocation
-                        try {
-                            callback(std::string_view(msg->str));
-                        } catch (const std::exception& e) {
-                            std::cerr << "Error in callback for " << url 
-                                     << ": " << e.what() << std::endl;
-                        }
-                        break;
-                        
-                    case ix::WebSocketMessageType::Open:
-                        std::cout << "Connected to " << url << std::endl;
-                        break;
-                        
-                    case ix::WebSocketMessageType::Close:
-                        std::cout << "Connection closed to " << url 
-                                 << " (code: " << msg->closeInfo.code 
-                                 << ", reason: " << msg->closeInfo.reason << ")" << std::endl;
-                        break;
-                        
-                    case ix::WebSocketMessageType::Error:
-                        std::cerr << "Error on " << url << ": " 
-                                 << msg->errorInfo.reason << std::endl;
-                        break;
-                        
-                    case ix::WebSocketMessageType::Ping:
-                        // Auto-handled by ixwebsocket
-                        break;
-                        
-                    case ix::WebSocketMessageType::Pong:
-                        // Auto-handled by ixwebsocket
-                        break;
-                        
-                    case ix::WebSocketMessageType::Fragment:
-                        // Fragments are automatically assembled
-                        break;
+        connectEndpointImpl(
+            callback,
+            host,
+            path,
+            on_open
+        );
+    }
+
+    /**
+     * @brief Connect to Binance WebSocket API and subscribe to user data stream
+     *
+     * Uses the direct WebSocket API subscription flow (`userDataStream.subscribe`),
+     * which replaces listen key based user data streams.
+     *
+     * @tparam Callback Callback function type (must be function pointer)
+     * @param callback Message handler: void(*)(std::string_view)
+     * @param host Binance WebSocket API host and port (default: "ws-api.binance.com:443")
+     * @param path Binance WebSocket API path (default: "/ws-api/v3")
+     * @param request_id Request id sent in the subscription JSON RPC payload
+     *
+     * @note This method sends `{ "method": "userDataStream.subscribe" }` on open
+     * @note Ensure the WebSocket session is authenticated if required by your account setup
+     */
+    template<typename Callback>
+    void connectUserData(
+        Callback callback,
+        const std::string& host = "ws-api.binance.com:443",
+        const std::string& path = "/ws-api/v3",
+        std::uint64_t request_id = 1
+    ) {
+        connectEndpointImpl(
+            callback,
+            host,
+            path,
+            [this, request_id](ix::WebSocket& ws, const std::string& url) {
+                const std::string subscribe_message =
+                    "{\"id\":" + std::to_string(request_id) +
+                    ",\"method\":\"userDataStream.subscribe\"}";
+
+                auto result = ws.send(subscribe_message);
+                if (!result.success) {
+                    logger("Failed to subscribe to Binance user data stream on " + url);
+                } else {
+                    logger("Subscribed to Binance user data stream on " + url);
                 }
             }
         );
-        
-        // Start connection (async, non-blocking)
-        conn_data->ws->start();
-        
-        connections[url] = std::move(conn_data);
+    }
+
+    /**
+     * @brief Connect to Binance WebSocket API and subscribe to user data stream using signature
+     *
+     * Sends `userDataStream.subscribe.signature` on open with `apiKey`,
+     * `timestamp`, optional `recvWindow`, and HMAC-SHA256 `signature`.
+     *
+     * @tparam Callback Callback function type (must be function pointer)
+     * @param callback Message handler: void(*)(std::string_view)
+     * @param host Binance WebSocket API host and port (default: "ws-api.binance.com:443")
+     * @param path Binance WebSocket API path (default: "/ws-api/v3")
+     * @param request_id Request id sent in the subscription JSON RPC payload
+     * @param recv_window Optional recvWindow in milliseconds (0 omits the field)
+     */
+    template<typename Callback>
+    void connectUserDataSignature(
+        Callback callback,
+        //const std::string& host = "ws-api.binance.com:443",
+        const std::string& host = "ws-api.testnet.binance.vision",
+        const std::string& path = "/ws-api/v3",
+        std::uint64_t request_id = 1,
+        std::uint64_t recv_window = 0
+    ) {
+        connectEndpointImpl(
+            callback,
+            host,
+            path,
+            [this, request_id, recv_window](ix::WebSocket& ws, const std::string& url) {
+                if (api_key.empty() || secret_key.empty()) {
+                    logger("Cannot subscribe (signature) to Binance user data stream on " + url + ": API key/secret key is empty");
+                    return;
+                }
+
+                const std::uint64_t timestamp = currentTimestamp();
+
+                // Signature payload must use the same parameter ordering as sent.
+                std::string signature_payload = "apiKey=" + api_key;
+
+                if (recv_window > 0) {
+                    signature_payload += "&recvWindow=" + std::to_string(recv_window);
+                }
+
+                signature_payload += "&timestamp=" + std::to_string(timestamp);
+
+                const std::string signature = sign(secret_key, signature_payload);
+
+                std::string subscribe_message =
+                    "{\"id\":" + std::to_string(request_id) +
+                    ",\"method\":\"userDataStream.subscribe.signature\",\"params\":{\"apiKey\":\"" + api_key + "\"";
+
+                if (recv_window > 0) {
+                    subscribe_message += ",\"recvWindow\":" + std::to_string(recv_window);
+                }
+
+                subscribe_message +=
+                    ",\"timestamp\":" + std::to_string(timestamp) +
+                    ",\"signature\":\"" + signature + "\"}}";
+
+                auto result = ws.send(subscribe_message);
+                if (!result.success) {
+                    logger("Failed to subscribe (signature) to Binance user data stream on " + url);
+                } else {
+                    logger("Subscribed (signature) to Binance user data stream on " + url);
+                }
+            }
+        );
     }
 
     /**
@@ -212,10 +270,10 @@ public:
         if (it != connections.end() && it->second->ws) {
             auto result = it->second->ws->send(message);
             if (!result.success) {
-                std::cerr << "Failed to send message to " << endpoint << std::endl;
+                logger("Failed to send message to " + endpoint);
             }
         } else {
-            std::cerr << "Endpoint not connected: " << endpoint << std::endl;
+            logger("Endpoint not connected: " + endpoint);
         }
     }
 
@@ -248,7 +306,7 @@ public:
     void disconnect(const std::string& endpoint) {
         auto it = connections.find(endpoint);
         if (it != connections.end() && it->second->ws) {
-            std::cout << "Disconnecting from " << endpoint << std::endl;
+            logger("Disconnecting from " + endpoint);
             it->second->ws->stop();
             connections.erase(it);
         }
@@ -265,7 +323,7 @@ public:
     void disconnectAll() {
         for (auto& [endpoint, data] : connections) {
             if (data->ws) {
-                std::cout << "Disconnecting from " << endpoint << std::endl;
+                logger("Disconnecting from " + endpoint);
                 data->ws->stop();
             }
         }
@@ -313,7 +371,7 @@ public:
             for (auto it = connections.begin(); it != connections.end();) {
                 if (!it->second->ws || 
                     it->second->ws->getReadyState() == ix::ReadyState::Closed) {
-                    std::cout << "Removing closed connection: " << it->first << std::endl;
+                    logger("Removing closed connection: " + it->first);
                     it = connections.erase(it);
                 } else {
                     ++it;
@@ -323,8 +381,87 @@ public:
     }
 
 private:
+    template<typename Callback, typename OnOpen>
+    void connectEndpointImpl(
+        Callback callback,
+        const std::string& host,
+        const std::string& path,
+        OnOpen on_open
+    ) {
+        std::string url = "wss://" + host + path;
+
+        logger("Connecting to " + url);
+
+        auto conn_data = std::make_unique<ConnectionData>();
+        conn_data->endpoint = url;
+        conn_data->ws = std::make_unique<ix::WebSocket>();
+        ix::WebSocket* ws_ptr = conn_data->ws.get();
+
+        // Configure WebSocket
+        conn_data->ws->setUrl(url);
+
+        // Set heartbeat (ping interval) - use setPingInterval instead
+        conn_data->ws->setPingInterval(30);
+
+        // Disable per-message deflate compression for lower latency
+        conn_data->ws->disablePerMessageDeflate();
+
+        // Set message callback - captures callback by value (function pointer)
+        conn_data->ws->setOnMessageCallback(
+            [this, callback, url, ws_ptr, on_open](const ix::WebSocketMessagePtr& msg) {
+                switch (msg->type) {
+                    case ix::WebSocketMessageType::Message:
+                        // Zero-copy string_view - no allocation
+                        try {
+                            callback(std::string_view(msg->str));
+                        } catch (const std::exception& e) {
+                            logger("Error in callback for " + url + ": " + e.what());
+                        }
+                        break;
+
+                    case ix::WebSocketMessageType::Open:
+                        logger("Websocket connection to " + url + " established.");
+                        try {
+                            on_open(*ws_ptr, url);
+                        } catch (const std::exception& e) {
+                            logger("Error in on-open handler for " + url + ": " + e.what());
+                        }
+                        break;
+
+                    case ix::WebSocketMessageType::Close:
+                        logger("Connection closed to " + url + " (code: " + std::to_string(msg->closeInfo.code) + ", reason: " + msg->closeInfo.reason + ")");
+                        break;
+
+                    case ix::WebSocketMessageType::Error:
+                        logger("WebSocket error on " + url + ": " + msg->errorInfo.reason);
+                        break;
+
+                    case ix::WebSocketMessageType::Ping:
+                        // Auto-handled by ixwebsocket
+                        break;
+
+                    case ix::WebSocketMessageType::Pong:
+                        // Auto-handled by ixwebsocket
+                        break;
+
+                    case ix::WebSocketMessageType::Fragment:
+                        // Fragments are automatically assembled
+                        break;
+                }
+            }
+        );
+
+        // Start connection (async, non-blocking)
+        conn_data->ws->start();
+
+        connections[url] = std::move(conn_data);
+    }
+
+    std::string api_key;       ///< API key for authenticated endpoints (if needed)
+    std::string secret_key;    ///< Secret key for signing (if needed)
     /** @brief Map of active connections indexed by endpoint URL */
     std::map<std::string, std::unique_ptr<ConnectionData>> connections;
+    std::function<void(const std::string&)> logger;
 };
 
 } // namespace trade_connector::websocket

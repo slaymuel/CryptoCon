@@ -75,7 +75,7 @@ namespace trade_connector::rest {
  */
 template<
     template<MarketType> typename ExchangeConfig, 
-    MarketType M
+    MarketType M = MarketType::GENERIC
 >
 class Client{
     using Config = ExchangeConfig<M>;
@@ -187,8 +187,17 @@ public:
         auto response = post(Config::listen_key, headers);
         simdjson::ondemand::parser parser;
         simdjson::padded_string json(response);
-        auto doc = parser.iterate(json);
-        return std::string(doc["listenKey"].get_string().value());
+        std::string listen_key;
+        try{
+            auto doc = parser.iterate(json);
+            listen_key = std::string(doc["listenKey"].get_string().value());
+        }
+        catch(const simdjson::simdjson_error& e){
+            logger("Failed to fetch listen key");
+            logger("Full response: " + response);
+            throw e;
+        }
+        return listen_key;
     }
 
     /**
@@ -367,12 +376,18 @@ public:
 
         simdjson::ondemand::parser parser;
         simdjson::padded_string json_orders(open_orders);
-        auto orders_doc = parser.iterate(json_orders);
-        auto orders = orders_doc.get_array().value();
-        for (auto order : orders) {
-            auto symbol = order["symbol"].get_string().value();
-            uint64_t order_id = order["orderId"].get_uint64().value();
-            cancelOrder(symbol, order_id);
+        try{
+            auto orders_doc = parser.iterate(json_orders);
+            auto orders = orders_doc.get_array().value();
+            for (auto order : orders) {
+                auto symbol = order["symbol"].get_string().value();
+                uint64_t order_id = order["orderId"].get_uint64().value();
+                cancelOrder(symbol, order_id);
+            }
+        }
+        catch(const simdjson::simdjson_error& e){
+            logger("Failed to cancel orders");
+            throw e;
         }
     }
 
@@ -839,9 +854,9 @@ public:
         if (ec) {
             std::string error_message = "Error reading from stream: " + ec.message();
             error = Error(error_message, 1);
-            std::cout << "Error reading from stream: " << ec.message() 
-              << " [" << ec.category().name() 
-              << ":" << ec.value() << "]" << std::endl;
+            logger("Error reading from stream: " + ec.message() 
+              + " [" + ec.category().name() 
+              + ":" + std::to_string(ec.value()) + "]");
             // Connection died, try to reconnect
             reconnectStream();
 
@@ -862,9 +877,9 @@ public:
         if (ec) {
             std::string error_message = "Error writing to stream: " + ec.message();
             error = Error(error_message, 2);
-            std::cout << "Error writing to stream: " << ec.message() 
-              << " [" << ec.category().name() 
-              << ":" << ec.value() << "]" << std::endl;
+            logger("Error writing to stream: " + ec.message() 
+              + " [" + ec.category().name() 
+              + ":" + std::to_string(ec.value()) + "]");
             // Connection died, try to reconnect
             reconnectStream();
         }
@@ -879,7 +894,7 @@ public:
      * @note Logs reconnection attempt to std::cout
      */
     void reconnectStream() {
-        std::cout << "Reconnecting stream..." << std::endl;
+        logger("Reconnecting stream...");
         connect();
     }
 

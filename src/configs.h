@@ -3,8 +3,7 @@
  * @brief Exchange configuration templates for trading connectors
  * 
  * This file provides compile-time configuration for different exchanges and market types.
- * Configurations are defined as template specializations, ensuring zero runtime overhead
- * while maintaining type safety and flexibility.
+ * Configurations are defined as template specializations.
  */
 
 #pragma once
@@ -21,8 +20,9 @@ namespace trade_connector {
  * and trading behavior for different market types.
  */
 enum class MarketType {
-    SPOT,      ///< Spot trading market (immediate settlement)
-    FUTURES    ///< Futures/derivatives trading market (contract-based)
+    SPOT,      ///< Spot trading market
+    FUTURES,    ///< Futures/derivatives trading market
+    GENERIC    ///< Generic market type
 };
 
 /**
@@ -30,24 +30,24 @@ enum class MarketType {
  * @brief Constrains template parameters to futures market type
  * 
  * This concept enables compile-time checks and method overloading
- * based on market type. Used with C++20 requires clauses.
+ * based on market type.
  * 
  * @tparam M Market type to validate
  */
 template<MarketType M>
-concept IsFutures = M == MarketType::FUTURES;
+concept IsFutures = M == MarketType::FUTURES || M == MarketType::GENERIC;
 
 /**
  * @concept IsSpot
  * @brief Constrains template parameters to spot market type
  * 
  * This concept enables compile-time checks and method overloading
- * based on market type. Used with C++20 requires clauses.
+ * based on market type.
  * 
  * @tparam M Market type to validate
  */
 template<MarketType M>
-concept IsSpot = M == MarketType::SPOT;
+concept IsSpot = M == MarketType::SPOT || M == MarketType::GENERIC;
 
 /**
  * @enum ProtocolType
@@ -63,8 +63,6 @@ enum class ProtocolType {
  * @brief Exchange endpoint configuration (plain data structure)
  * 
  * This template provides compile-time configuration for Binance exchange endpoints.
- * All members are constexpr, ensuring zero runtime overhead. Template specializations
- * exist for different market types (SPOT, FUTURES).
  * 
  * @tparam M Market type (SPOT or FUTURES)
  * 
@@ -130,8 +128,6 @@ struct BinanceConfig<MarketType::FUTURES>{
  * @brief Exchange endpoint configuration for Kraken
  * 
  * This template provides compile-time configuration for Kraken exchange endpoints.
- * All members are constexpr, ensuring zero runtime overhead. Template specializations
- * exist for different market types (SPOT, FUTURES).
  * 
  * @tparam M Market type (SPOT or FUTURES)
  * 
@@ -198,8 +194,6 @@ struct KrakenConfig<MarketType::FUTURES>{
  * @brief Exchange endpoint configuration for Coinbase Advanced Trade API
  * 
  * This template provides compile-time configuration for Coinbase exchange endpoints.
- * All members are constexpr, ensuring zero runtime overhead. Template specializations
- * exist for different market types (SPOT, FUTURES).
  * 
  * @tparam M Market type (SPOT or FUTURES)
  * 
@@ -209,14 +203,14 @@ template<MarketType M>
 struct CoinbaseConfig;
 
 /**
- * @struct CoinbaseConfig<MarketType::SPOT>
- * @brief Coinbase Spot market configuration
+ * @struct CoinbaseConfig<MarketType::GENERIC>
+ * @brief Coinbase Generic market configuration
  * 
  * Contains all REST API endpoints for Coinbase Advanced Trade API.
  * Uses JWT authentication and different endpoint structure than legacy APIs.
  */
 template<>
-struct CoinbaseConfig<MarketType::SPOT>{
+struct CoinbaseConfig<MarketType::GENERIC>{
     static constexpr const char* url = "api.coinbase.com";                        ///< Production REST API host
     static constexpr const char* test_url = "api-public.sandbox.pro.coinbase.com"; ///< Sandbox API host
     static constexpr const char* account_info = "/api/v3/brokerage/accounts";     ///< Account information endpoint
@@ -228,33 +222,6 @@ struct CoinbaseConfig<MarketType::SPOT>{
     static constexpr const char* order = "/api/v3/brokerage/orders";              ///< Order placement/query endpoint
     static constexpr const char* cancel_order = "/api/v3/brokerage/orders/batch_cancel"; ///< Cancel orders endpoint
     static constexpr const char* open_orders = "/api/v3/brokerage/orders/historical/batch"; ///< Orders history endpoint
-    static constexpr const char* ws_url = "wss://advanced-trade-ws.coinbase.com";  ///< WebSocket URL (uses JWT auth, no separate listen key)
-    static constexpr const ProtocolType default_protocol = ProtocolType::JSON;    ///< Default communication protocol
-    static constexpr const bool supports_quote_order_qty = true;                  ///< Supports quote currency orders
-};
-
-/**
- * @struct CoinbaseConfig<MarketType::FUTURES>
- * @brief Coinbase Futures market configuration
- * 
- * Contains all REST API endpoints for Coinbase Futures trading.
- * Coinbase Futures uses the same Advanced Trade API with futures-specific products.
- */
-template<>
-struct CoinbaseConfig<MarketType::FUTURES>{
-    static constexpr const char* url = "api.coinbase.com";                        ///< Production REST API host
-    static constexpr const char* test_url = "api-public.sandbox.pro.coinbase.com"; ///< Sandbox API host
-    static constexpr const char* account_info = "/api/v3/brokerage/accounts";     ///< Account information endpoint
-    static constexpr const char* ping = "/api/v3/brokerage/time";                 ///< Server time endpoint
-    static constexpr const char* server_time = "/api/v3/brokerage/time";          ///< Server time endpoint
-    static constexpr const char* exchange_info = "/api/v3/brokerage/products";    ///< Trading products information
-    static constexpr const char* depth = "/api/v3/brokerage/product_book";        ///< Order book endpoint
-    static constexpr const char* trades = "/api/v3/brokerage/products/trades";    ///< Recent trades endpoint
-    static constexpr const char* order = "/api/v3/brokerage/orders";              ///< Order placement endpoint
-    static constexpr const char* cancel_order = "/api/v3/brokerage/orders/batch_cancel"; ///< Cancel orders endpoint
-    static constexpr const char* open_orders = "/api/v3/brokerage/orders/historical/batch"; ///< Orders history endpoint
-    static constexpr const char* open_positions = "/api/v3/brokerage/cfm/positions"; ///< Futures positions endpoint
-    static constexpr const char* leverage = "/api/v3/brokerage/cfm/positions/settings"; ///< Position settings endpoint
     static constexpr const char* ws_url = "wss://advanced-trade-ws.coinbase.com";  ///< WebSocket URL (uses JWT auth, no separate listen key)
     static constexpr const ProtocolType default_protocol = ProtocolType::JSON;    ///< Default communication protocol
     static constexpr const bool supports_quote_order_qty = true;                  ///< Supports quote currency orders
