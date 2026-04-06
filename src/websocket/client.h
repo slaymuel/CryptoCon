@@ -206,7 +206,7 @@ public:
         const std::string& host = "ws-api.testnet.binance.vision",
         const std::string& path = "/ws-api/v3",
         std::uint64_t request_id = 1,
-        std::uint64_t recv_window = 0
+        std::uint64_t recv_window = 5000
     ) {
         connectEndpointImpl(
             callback,
@@ -460,7 +460,7 @@ private:
     std::string api_key;       ///< API key for authenticated endpoints (if needed)
     std::string secret_key;    ///< Secret key for signing (if needed)
     /** @brief Map of active connections indexed by endpoint URL */
-    std::map<std::string, std::unique_ptr<ConnectionData>> connections;
+    std::unordered_map<std::string, std::unique_ptr<ConnectionData>> connections;
     std::function<void(const std::string&)> logger;
 };
 

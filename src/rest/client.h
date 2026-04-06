@@ -142,14 +142,11 @@ public:
         connect();
     }
 
-    /** @brief Copy constructor deleted - connections cannot be copied */
     Client(const Client&) = delete;
-    /** @brief Copy assignment deleted - connections cannot be copied */
     Client& operator=(const Client&) = delete;
     
-    /** @brief Move constructor deleted - connections should remain stable */
+    /** @brief Could implement these later if needed */
     Client(Client&&) noexcept = delete;
-    /** @brief Move assignment deleted - connections should remain stable */
     Client& operator=(Client&&) noexcept = delete;
 
     /**
