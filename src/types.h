@@ -39,6 +39,93 @@ private:
 
 inline Error dummy_error; // A dummy error object for default parameters
 
+enum class Venue {
+    NONE,
+    BINANCE,
+    COINBASE,
+    KRAKEN,
+    BITFINEX,
+    FTX,
+    BYBIT,
+    HUOBI,
+    OKEX,
+    GATEIO,
+    POLONIEX
+};
+
+enum class TokenPair {
+    NONE,
+    BTCUSD,
+    ETHUSD
+};
+
+inline std::map<Venue, std::string> venueToString = {
+    {Venue::NONE, "NONE"},
+    {Venue::BINANCE, "BINANCE"},
+    {Venue::COINBASE, "COINBASE"},
+    {Venue::KRAKEN, "KRAKEN"},
+    {Venue::BITFINEX, "BITFINEX"},
+    {Venue::FTX, "FTX"},
+    {Venue::BYBIT, "BYBIT"},
+    {Venue::HUOBI, "HUOBI"},
+    {Venue::OKEX, "OKEX"},
+    {Venue::GATEIO, "GATEIO"},
+    {Venue::POLONIEX, "POLONIEX"}
+};
+
+
+
+inline std::map<TokenPair, std::string> tokenPairToString = {
+    {TokenPair::NONE, "NONE"},
+    {TokenPair::BTCUSD, "BTCUSD"},
+    {TokenPair::ETHUSD, "ETHUSD"}
+};
+
+namespace Binance {
+    inline std::map<TokenPair, std::string> tokenPairToString = {
+        {TokenPair::BTCUSD, "BTCUSDT"},
+        {TokenPair::ETHUSD, "ETHUSDT"}
+    };
+    inline std::map<std::string, TokenPair> stringToTokenPair = {
+        {"BTCUSDT", TokenPair::BTCUSD},
+        {"ETHUSDT", TokenPair::ETHUSD}
+    };
+    inline std::map<std::string, std::string> symbolToCanonical = {
+        {"BTCUSDT", "BTCUSD"},
+        {"ETHUSDT", "ETHUSD"}
+    };
+}
+
+namespace Kraken {
+    inline std::map<TokenPair, std::string> tokenPairToString = {
+        {TokenPair::BTCUSD, "XBT/USD"},
+        {TokenPair::ETHUSD, "ETH/USD"}
+    };
+    inline std::map<std::string, TokenPair> stringToTokenPair = {
+        {"XBT/USD", TokenPair::BTCUSD},
+        {"ETH/USD", TokenPair::ETHUSD}
+    };
+    inline std::map<std::string, std::string> symbolToCanonical = {
+        {"XBT/USD", "BTCUSD"},
+        {"ETH/USD", "ETHUSD"}
+    };
+}
+
+namespace Coinbase {
+    inline std::map<TokenPair, std::string> tokenPairToString = {
+        {TokenPair::BTCUSD, "BTC-USD"},
+        {TokenPair::ETHUSD, "ETH-USD"}
+    };
+    inline std::map<std::string, TokenPair> stringToTokenPair = {
+        {"BTC-USD", TokenPair::BTCUSD},
+        {"ETH-USD", TokenPair::ETHUSD}
+    };
+    inline std::map<std::string, std::string> symbolToCanonical = {
+        {"BTC-USD", "BTCUSD"},
+        {"ETH-USD", "ETHUSD"}
+    };
+}
+
 enum class Side{
     BUY,
     SELL,
@@ -83,6 +170,7 @@ enum class OrderType{
     OCO,
     UNKNOWN
 };
+
 inline std::map<OrderType, std::string> orderTypeToString = {
     {OrderType::MARKET, "MARKET"},
     {OrderType::LIMIT, "LIMIT"},

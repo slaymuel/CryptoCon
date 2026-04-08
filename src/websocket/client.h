@@ -146,114 +146,6 @@ public:
     }
 
     /**
-     * @brief Connect to Binance WebSocket API and subscribe to user data stream
-     *
-     * Uses the direct WebSocket API subscription flow (`userDataStream.subscribe`),
-     * which replaces listen key based user data streams.
-     *
-     * @tparam Callback Callback function type (must be function pointer)
-     * @param callback Message handler: void(*)(std::string_view)
-     * @param host Binance WebSocket API host and port (default: "ws-api.binance.com:443")
-     * @param path Binance WebSocket API path (default: "/ws-api/v3")
-     * @param request_id Request id sent in the subscription JSON RPC payload
-     *
-     * @note This method sends `{ "method": "userDataStream.subscribe" }` on open
-     * @note Ensure the WebSocket session is authenticated if required by your account setup
-     */
-    template<typename Callback>
-    void connectUserData(
-        Callback callback,
-        const std::string& host = "ws-api.binance.com:443",
-        const std::string& path = "/ws-api/v3",
-        std::uint64_t request_id = 1
-    ) {
-        connectEndpointImpl(
-            callback,
-            host,
-            path,
-            [this, request_id](ix::WebSocket& ws, const std::string& url) {
-                const std::string subscribe_message =
-                    "{\"id\":" + std::to_string(request_id) +
-                    ",\"method\":\"userDataStream.subscribe\"}";
-
-                auto result = ws.send(subscribe_message);
-                if (!result.success) {
-                    logger("Failed to subscribe to Binance user data stream on " + url);
-                } else {
-                    logger("Subscribed to Binance user data stream on " + url);
-                }
-            }
-        );
-    }
-
-    /**
-     * @brief Connect to Binance WebSocket API and subscribe to user data stream using signature
-     *
-     * Sends `userDataStream.subscribe.signature` on open with `apiKey`,
-     * `timestamp`, optional `recvWindow`, and HMAC-SHA256 `signature`.
-     *
-     * @tparam Callback Callback function type (must be function pointer)
-     * @param callback Message handler: void(*)(std::string_view)
-     * @param host Binance WebSocket API host and port (default: "ws-api.binance.com:443")
-     * @param path Binance WebSocket API path (default: "/ws-api/v3")
-     * @param request_id Request id sent in the subscription JSON RPC payload
-     * @param recv_window Optional recvWindow in milliseconds (0 omits the field)
-     */
-    template<typename Callback>
-    void connectUserDataSignature(
-        Callback callback,
-        //const std::string& host = "ws-api.binance.com:443",
-        const std::string& host = "ws-api.testnet.binance.vision",
-        const std::string& path = "/ws-api/v3",
-        std::uint64_t request_id = 1,
-        std::uint64_t recv_window = 5000
-    ) {
-        connectEndpointImpl(
-            callback,
-            host,
-            path,
-            [this, request_id, recv_window](ix::WebSocket& ws, const std::string& url) {
-                if (api_key.empty() || secret_key.empty()) {
-                    logger("Cannot subscribe (signature) to Binance user data stream on " + url + ": API key/secret key is empty");
-                    return;
-                }
-
-                const std::uint64_t timestamp = currentTimestamp();
-
-                // Signature payload must use the same parameter ordering as sent.
-                std::string signature_payload = "apiKey=" + api_key;
-
-                if (recv_window > 0) {
-                    signature_payload += "&recvWindow=" + std::to_string(recv_window);
-                }
-
-                signature_payload += "&timestamp=" + std::to_string(timestamp);
-
-                const std::string signature = sign(secret_key, signature_payload);
-
-                std::string subscribe_message =
-                    "{\"id\":" + std::to_string(request_id) +
-                    ",\"method\":\"userDataStream.subscribe.signature\",\"params\":{\"apiKey\":\"" + api_key + "\"";
-
-                if (recv_window > 0) {
-                    subscribe_message += ",\"recvWindow\":" + std::to_string(recv_window);
-                }
-
-                subscribe_message +=
-                    ",\"timestamp\":" + std::to_string(timestamp) +
-                    ",\"signature\":\"" + signature + "\"}}";
-
-                auto result = ws.send(subscribe_message);
-                if (!result.success) {
-                    logger("Failed to subscribe (signature) to Binance user data stream on " + url);
-                } else {
-                    logger("Subscribed (signature) to Binance user data stream on " + url);
-                }
-            }
-        );
-    }
-
-    /**
      * @brief Send a message to a specific WebSocket endpoint
      * 
      * Sends a text message to the specified endpoint. The endpoint must be
@@ -265,7 +157,7 @@ public:
      * @note Silently fails if endpoint is not connected (error logged to std::cerr)
      * @note This method is thread-safe
      */
-    void send(const std::string& endpoint, const std::string& message) {
+    void send(const std::string& endpoint, const std::string& message) const {
         auto it = connections.find(endpoint);
         if (it != connections.end() && it->second->ws) {
             auto result = it->second->ws->send(message);
@@ -285,7 +177,7 @@ public:
      * 
      * @note Returns false if endpoint was never connected or connection closed
      */
-    bool isConnected(const std::string& endpoint) {
+    bool isConnected(const std::string& endpoint) const {
         auto it = connections.find(endpoint);
         return it != connections.end() && 
                it->second->ws && 
@@ -457,8 +349,8 @@ private:
         connections[url] = std::move(conn_data);
     }
 
-    std::string api_key;       ///< API key for authenticated endpoints (if needed)
-    std::string secret_key;    ///< Secret key for signing (if needed)
+    const std::string api_key;       ///< API key for authenticated endpoints (if needed)
+    const std::string secret_key;    ///< Secret key for signing (if needed)
     /** @brief Map of active connections indexed by endpoint URL */
     std::unordered_map<std::string, std::unique_ptr<ConnectionData>> connections;
     std::function<void(const std::string&)> logger;
