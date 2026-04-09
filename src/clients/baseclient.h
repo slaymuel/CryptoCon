@@ -25,6 +25,7 @@ static void null_logger(const std::string&) {}
  // API would then be something like:
  // auto client = BinanceClient(api_key, secret_key);
  // Where BinanceClient is a type alias for Client<BinanceConfig<MarketType::SPOT>>
+ // TODO: Add some hooks for users.
 template<typename Derived, typename Config, MarketType M = MarketType::GENERIC>
 class BaseClient{
 
@@ -40,9 +41,10 @@ public:
           ws_host(ws_host), 
           api_key(api_key), 
           secret_key(secret_key), 
-          rest_client(api_key, secret_key, logger), 
-          ws_client(ws_host, api_key, secret_key), 
+          rest_client(rest_host, logger), 
+          ws_client(api_key, secret_key, logger), 
           logger(logger){
+        // SyncClient or AsyncClient
         derived = static_cast<Derived&>(*this);
     }
 
@@ -54,7 +56,7 @@ public:
         return secret_key;
     }
 
-    rest::Client<M>& restClient(){
+    rest::Client& restClient(){
         return rest_client;
     }
 
@@ -63,7 +65,7 @@ public:
     }
 
     std::string buildQuery(const OrderParams<M>& params){
-        return rest_client.buildQuery(params);
+        return config.buildQuery(params);
     }
 
     std::string sendOrder(const OrderParams<M>& params, Error& error = dummy_error) {
@@ -100,7 +102,7 @@ protected:
     const std::string secret_key;    ///< Exchange secret key for request signing
     const std::string api_key;       ///< Exchange API key for authentication
     websocket::Client ws_client;
-    rest::Client<M> rest_client;
+    rest::Client rest_client;
     std::function<void(const std::string&)> logger;  ///< Logger instance for logging messages
 
 private:

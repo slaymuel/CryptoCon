@@ -9,54 +9,9 @@
 #pragma once
 
 #include <string_view>
+#include "types.h"
 
 namespace trade_connector {
-
-/**
- * @enum MarketType
- * @brief Defines the type of trading market
- * 
- * Used as a template parameter to specialize exchange configurations
- * and trading behavior for different market types.
- */
-enum class MarketType {
-    SPOT,      ///< Spot trading market
-    FUTURES,    ///< Futures/derivatives trading market
-    GENERIC    ///< Generic market type
-};
-
-/**
- * @concept IsFutures
- * @brief Constrains template parameters to futures market type
- * 
- * This concept enables compile-time checks and method overloading
- * based on market type.
- * 
- * @tparam M Market type to validate
- */
-template<MarketType M>
-concept IsFutures = M == MarketType::FUTURES || M == MarketType::GENERIC;
-
-/**
- * @concept IsSpot
- * @brief Constrains template parameters to spot market type
- * 
- * This concept enables compile-time checks and method overloading
- * based on market type.
- * 
- * @tparam M Market type to validate
- */
-template<MarketType M>
-concept IsSpot = M == MarketType::SPOT || M == MarketType::GENERIC;
-
-/**
- * @enum ProtocolType
- * @brief Communication protocol types supported by exchanges
- */
-enum class ProtocolType {
-    JSON,  ///< JSON-based REST/WebSocket protocol
-    SBE    ///< Simple Binary Encoding (high-performance binary protocol)
-};
 
 /**
  * @struct BinanceConfig

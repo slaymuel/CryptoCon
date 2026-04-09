@@ -9,11 +9,7 @@
 #pragma once
 
 #include <chrono>
-#include <openssl/hmac.h>
-#include <openssl/evp.h>
 #include <string>
-#include <iomanip>
-#include <sstream>
 
 /**
  * @brief Get current Unix timestamp in milliseconds
@@ -40,4 +36,10 @@ void appendNumber(std::string& str, T value) {
     if (ec == std::errc{}) {
         str.append(buffer, ptr - buffer);
     }
+}
+
+inline std::string toLower(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+    return s;
 }

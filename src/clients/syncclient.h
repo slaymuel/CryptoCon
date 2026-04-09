@@ -1,11 +1,12 @@
-#pragma one
+#pragma once
+
 #include "baseclient.h"
 
 namespace trade_connector{
 
     // Host class for the policies. Users can also derive from this if they want to implement custom clients with more functionality.
     template<typename Config>
-    class SyncClient : public BaseClient<SyncClient<Config>, Config, Config::market_type>
+    class SyncClient : public BaseClient<SyncClient<Config>, Config>
     {
         public:
         SyncClient(
@@ -14,7 +15,7 @@ namespace trade_connector{
             const std::string& api_key, 
             const std::string& secret_key, 
         std::function<void(const std::string&)> logger = null_logger) 
-        : BaseClient<SyncClient<Config>, Config, Config::market_type>(rest_host, ws_host, api_key, secret_key, logger) {}
+        : BaseClient<SyncClient<Config>, Config>(rest_host, ws_host, api_key, secret_key, logger) {}
 
         SyncClient(const SyncClient&) = delete;
         SyncClient& operator=(const SyncClient&) = delete;

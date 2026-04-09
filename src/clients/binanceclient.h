@@ -1,9 +1,10 @@
 #pragma once
 
+#include <simdjson.h>
+#include <format>
 #include "syncclient.h"
-#include "../rest/client.h"
-#include "../websocket/client.h"
 #include "../utils/signing.h"
+#include "utils/utils.h"
 
 namespace trade_connector {
     
@@ -12,6 +13,9 @@ class BinancePolicy {
     using Headers = std::span<const std::pair<std::string, std::string>>;
 
 public:
+
+    static constexpr const char* BINANCE_WS_HOST = "stream.testnet.binance.vision";
+    static constexpr const char* BINANCE_REST_HOST = "api.binance.com";
     /**
     * @brief Construct REST client with custom host
     * 
@@ -30,7 +34,7 @@ public:
         const std::string& secret_key,
         std::function<void(const std::string&)> logger = null_logger
         
-    ) : SyncClient<BinancePolicy<M>>("api.binance.com", "stream.testnet.binance.vision", api_key, secret_key, logger){ }
+    ) : SyncClient<BinancePolicy<M>>(BINANCE_REST_HOST, BINANCE_WS_HOST, api_key, secret_key, logger){ }
 
     BinancePolicy(const BinancePolicy&) = delete;
     BinancePolicy& operator=(const BinancePolicy&) = delete;
@@ -61,7 +65,7 @@ public:
             {"X-MBX-APIKEY", host.api_key}
         };
 
-        auto response = post("/api/v3/userDataStream", headers);
+        auto response = host.post("/api/v3/userDataStream", headers);
         simdjson::ondemand::parser parser;
         simdjson::padded_string json(response);
         std::string listen_key;
@@ -257,7 +261,9 @@ public:
             auto orders_doc = parser.iterate(json_orders);
             auto orders = orders_doc.get_array().value();
             for (auto order : orders) {
-                auto symbol = Binance::stringToTokenPair[order["symbol"].get_string().value()];
+                // Avoids allocation since find() on Binance::stringToTokenPair is transparent
+                auto it = Binance::stringToTokenPair.find(order["symbol"].get_string().value());
+                auto symbol = it->second;
                 uint64_t order_id = order["orderId"].get_uint64().value();
                 cancelOrder(symbol, order_id);
             }
@@ -737,7 +743,7 @@ public:
             host,
             path,
             // TODO make alias for ix::WebSocket
-            [this, request_id, recv_window, &host](ix::WebSocket& ws, const std::string& url) {
+            [this, request_id, recv_window, &host](const std::string& url) {
                 if (host.api_key.empty() || host.secret_key.empty()) {
                     host.logger("Cannot subscribe (signature) to Binance user data stream on " + url + ": API key/secret key is empty");
                     return;
@@ -768,8 +774,8 @@ public:
                     ",\"timestamp\":" + std::to_string(timestamp) +
                     ",\"signature\":\"" + signature + "\"}}";
 
-                auto result = ws.send(subscribe_message);
-                if (!result.success) {
+                bool result = host.ws_client.send(url, subscribe_message);
+                if (!result) {
                     host.logger("Failed to subscribe (signature) to Binance user data stream on " + url);
                 } else {
                     host.logger("Subscribed (signature) to Binance user data stream on " + url);
@@ -786,7 +792,7 @@ public:
             s += std::format("/{}@depth", toLower(Binance::tokenPairToString[token])); 
         }
 
-        const std::string address = std::format("wss://{}{}", "stream.testnet.binance.vision", s);
+        const std::string address = std::format("wss://{}{}", BINANCE_WS_HOST, s);
         host.logger("Connected to Binance Depth Data Feed at address: {}", address);
 
         host.ws_client.connectEndpoint(
@@ -802,46 +808,27 @@ public:
         // Combined streams format: /stream?streams=<symbol1>@<stream1>/<symbol2>@<stream2>
         std::string aggregate;
         if (tokens.size() == 1) {
-            aggregate = std::format("/ws/{}@aggTrade", toLower(Binance::symbolToString[tokens[0]]));
+            aggregate = std::format("/ws/{}@aggTrade", toLower(Binance::tokenPairToString[tokens[0]]));
         } else {
             aggregate = "/stream?streams=";
             for (std::size_t index = 0; index < tokens.size(); ++index) {
                 if (index > 0) {
                     aggregate += "/";
                 }
-                aggregate += std::format("{}@aggTrade", toLower(Binance::symbolToString[tokens[index]]));
+                aggregate += std::format("{}@aggTrade", toLower(Binance::tokenPairToString[tokens[index]]));
             }
         }
 
-        address = "wss://" + BINANCE_HOST + aggregate;
+        const std::string address = std::format("wss://{}{}", BINANCE_WS_HOST, aggregate);
         host.logger("Connecting to Binance Market Data Feed: {}", address);
 
         host.ws_client.connectEndpoint(
-            [this](std::string_view msg) {
-                try {
-                    //static thread_local simdjson::ondemand::parser parser;
-                    //auto doc = parser.iterate(msg);
-
-                    // Copy the JSON string so it outlives this callback
-                    auto json_str = std::make_shared<std::string>(msg);
-                    // Parse JSON
-                    Json::Value data;
-                    Json::Reader reader;
-                    reader.parse(*json_str, data);
-                    this->publishEvent(data);
-                } catch (const std::exception& e) {
-                    LOG_ERROR(logger, "Error processing message: {}", e.what());
-                }
-            },
-            BINANCE_HOST,
+            callback,
+            BINANCE_WS_HOST,
             aggregate
         );
-    
-        connected = true;
     }
 
 };
-
-SyncClient<BinancePolicy<MarketType::SPOT>> binance_client;
 
 } // namespace trade_connector

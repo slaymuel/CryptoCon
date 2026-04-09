@@ -10,13 +10,56 @@
 #pragma once
 
 #include <map>
-#include <boost/beast/core.hpp>
-#include <boost/beast/http.hpp>
-#include "configs.h"
+#include <string>
 
 namespace trade_connector {
 
-    
+/**
+ * @enum MarketType
+ * @brief Defines the type of trading market
+ * 
+ * Used as a template parameter to specialize exchange configurations
+ * and trading behavior for different market types.
+ */
+enum class MarketType {
+    SPOT,      ///< Spot trading market
+    FUTURES,    ///< Futures/derivatives trading market
+    GENERIC    ///< Generic market type
+};
+
+/**
+ * @concept IsFutures
+ * @brief Constrains template parameters to futures market type
+ * 
+ * This concept enables compile-time checks and method overloading
+ * based on market type.
+ * 
+ * @tparam M Market type to validate
+ */
+template<MarketType M>
+concept IsFutures = M == MarketType::FUTURES || M == MarketType::GENERIC;
+
+/**
+ * @concept IsSpot
+ * @brief Constrains template parameters to spot market type
+ * 
+ * This concept enables compile-time checks and method overloading
+ * based on market type.
+ * 
+ * @tparam M Market type to validate
+ */
+template<MarketType M>
+concept IsSpot = M == MarketType::SPOT || M == MarketType::GENERIC;
+
+/**
+ * @enum ProtocolType
+ * @brief Communication protocol types supported by exchanges
+ */
+enum class ProtocolType {
+    JSON,  ///< JSON-based REST/WebSocket protocol
+    SBE    ///< Simple Binary Encoding (high-performance binary protocol)
+};
+
 class Error {
     // Error codes:
     // 0 = No error
@@ -53,12 +96,6 @@ enum class Venue {
     POLONIEX
 };
 
-enum class TokenPair {
-    NONE,
-    BTCUSD,
-    ETHUSD
-};
-
 inline std::map<Venue, std::string> venueToString = {
     {Venue::NONE, "NONE"},
     {Venue::BINANCE, "BINANCE"},
@@ -73,7 +110,11 @@ inline std::map<Venue, std::string> venueToString = {
     {Venue::POLONIEX, "POLONIEX"}
 };
 
-
+enum class TokenPair {
+    NONE,
+    BTCUSD,
+    ETHUSD
+};
 
 inline std::map<TokenPair, std::string> tokenPairToString = {
     {TokenPair::NONE, "NONE"},
@@ -86,7 +127,7 @@ namespace Binance {
         {TokenPair::BTCUSD, "BTCUSDT"},
         {TokenPair::ETHUSD, "ETHUSDT"}
     };
-    inline std::map<std::string, TokenPair> stringToTokenPair = {
+    inline std::map<std::string, TokenPair, std::less<>> stringToTokenPair = {
         {"BTCUSDT", TokenPair::BTCUSD},
         {"ETHUSDT", TokenPair::ETHUSD}
     };
@@ -243,21 +284,5 @@ struct OrderParams<MarketType::FUTURES> {
     Side position_side = Side::NONE;  ///< Position side: "BOTH", "LONG", or "SHORT" (hedge mode)
     unsigned long timestamp = 0;     ///< Order timestamp in milliseconds (0 = auto-generate)
 };
-
-/**
- * @typedef RequestString
- * @brief HTTP request type with string body
- * 
- * Used for POST/PUT requests that need to send data in the request body.
- */
-using RequestString = boost::beast::http::request<boost::beast::http::string_body>;
-
-/**
- * @typedef RequestEmpty
- * @brief HTTP request type with no body
- * 
- * Used for GET/DELETE requests that don't send data in the request body.
- */
-using RequestEmpty = boost::beast::http::request<boost::beast::http::empty_body>;
 
 } // namespace trade_connector
