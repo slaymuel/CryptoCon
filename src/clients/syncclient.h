@@ -4,10 +4,12 @@
 
 namespace trade_connector{
 
-    // Host class for the policies. Users can also derive from this if they want to implement custom clients with more functionality.
-    template<typename Config>
-    class SyncClient : public BaseClient<SyncClient<Config>, Config>
-    {
+    /// @brief Synchronous trading client with optional mixin extensions.
+    /// @tparam Config      Exchange policy (e.g. BinancePolicy<MarketType::SPOT>)
+    /// @tparam Extensions  Zero or more CRTP mixin templates for user-defined functionality
+    template<typename Config, template<class> class... Extensions>
+    class SyncClient : public BaseClient<SyncClient<Config, Extensions...>, Config>, 
+                       public Extensions<SyncClient<Config, Extensions...>>... {
         public:
         SyncClient(
             const std::string& rest_host,
@@ -15,7 +17,7 @@ namespace trade_connector{
             const std::string& api_key, 
             const std::string& secret_key, 
         std::function<void(const std::string&)> logger = null_logger) 
-        : BaseClient<SyncClient<Config>, Config>(rest_host, ws_host, api_key, secret_key, logger) {}
+        : BaseClient<SyncClient<Config, Extensions...>, Config>(rest_host, ws_host, api_key, secret_key, logger) {}
 
         SyncClient(const SyncClient&) = delete;
         SyncClient& operator=(const SyncClient&) = delete;

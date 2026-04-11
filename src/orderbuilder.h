@@ -9,10 +9,10 @@
 
 #pragma once
 
-#include "../configs.h"
-#include "../types.h"
+#include "configs.h"
+#include "types.h"
 
-namespace trade_connector::rest {
+namespace trade_connector {
 
 /**
  * @class OrderBuilder

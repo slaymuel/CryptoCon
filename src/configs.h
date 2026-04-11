@@ -1,10 +1,5 @@
-/**
- * @file configs.h
- * @brief Exchange configuration templates for trading connectors
- * 
- * This file provides compile-time configuration for different exchanges and market types.
- * Configurations are defined as template specializations.
- */
+/// @file configs.h
+/// @brief Compile-time exchange endpoint configurations.
 
 #pragma once
 
@@ -13,27 +8,11 @@
 
 namespace trade_connector {
 
-/**
- * @struct BinanceConfig
- * @brief Exchange endpoint configuration (plain data structure)
- * 
- * This template provides compile-time configuration for Binance exchange endpoints.
- * 
- * @tparam M Market type (SPOT or FUTURES)
- * 
- * @note No virtual functions - completely zero overhead abstraction
- * @note Users can create custom instances with different endpoints for testing
- */
+/// Binance endpoint config, specialised per MarketType.
 template<MarketType M>
 struct BinanceConfig;
 
-/**
- * @struct BinanceConfig<MarketType::SPOT>
- * @brief Binance Spot market configuration
- * 
- * Contains all REST API endpoints and WebSocket streams for Binance Spot trading.
- * All endpoints are constexpr strings for zero runtime cost.
- */
+/// Binance Spot market endpoints.
 template<>
 struct BinanceConfig<MarketType::SPOT>{
     static constexpr const char* url = "api.binance.com";                    ///< Production REST API host
@@ -52,13 +31,7 @@ struct BinanceConfig<MarketType::SPOT>{
     static constexpr const bool supports_quote_order_qty = true;              ///< Supports quoteOrderQty parameter
 };
 
-/**
- * @struct BinanceConfig<MarketType::FUTURES>
- * @brief Binance Futures market configuration
- * 
- * Contains all REST API endpoints and WebSocket streams for Binance Futures trading.
- * Includes futures-specific endpoints for leverage, margin type, and position management.
- */
+/// Binance Futures market endpoints.
 template<>
 struct BinanceConfig<MarketType::FUTURES>{
     static constexpr const char* url = "fapi.binance.com";                       ///< Production Futures API host
@@ -78,26 +51,11 @@ struct BinanceConfig<MarketType::FUTURES>{
     static constexpr const bool supports_quote_order_qty = false;                 ///< Does not support quoteOrderQty parameter
 };
 
-/**
- * @struct KrakenConfig
- * @brief Exchange endpoint configuration for Kraken
- * 
- * This template provides compile-time configuration for Kraken exchange endpoints.
- * 
- * @tparam M Market type (SPOT or FUTURES)
- * 
- * @note Kraken uses different API versioning and authentication mechanisms
- */
+/// Kraken endpoint config, specialised per MarketType.
 template<MarketType M>
 struct KrakenConfig;
 
-/**
- * @struct KrakenConfig<MarketType::SPOT>
- * @brief Kraken Spot market configuration
- * 
- * Contains all REST API endpoints for Kraken Spot trading.
- * Kraken uses a different URL structure and requires different authentication.
- */
+/// Kraken Spot market endpoints.
 template<>
 struct KrakenConfig<MarketType::SPOT>{
     static constexpr const char* url = "api.kraken.com";                          ///< Production REST API host

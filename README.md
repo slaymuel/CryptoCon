@@ -1,333 +1,265 @@
-# 🚀 TradeConnector (Work  in progress)
+# TradeConnector (Work in progress)
 
-> **Modern and performant trading library for cryptocurrency exchanges**
+> Modern C++20 trading library for cryptocurrency exchanges
 
 [![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/20)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)]()
 
-A performant and type-safe library including REST (using [Boost.Beast](https://www.boost.org/doc/libs/release/libs/beast/)) and websocket (using [IXWebSocket](https://github.com/machinezone/IXWebSocket)) clients for communicating with cryptocurrency exchanges. TradeConnector is designed for algorithmic trading and focuses on performance and usability. Currently has support for the Binance and experimental support for Kraken and Coinbase.
+A type-safe static library with REST ([Boost.Beast](https://www.boost.org/doc/libs/release/libs/beast/)) and WebSocket ([IXWebSocket](https://github.com/machinezone/IXWebSocket)) clients for cryptocurrency exchanges. Uses a policy-based design with CRTP and C++20 concepts for compile-time market validation. Currently supports Binance (spot + futures) with experimental Kraken configs.
 
 ---
 
-## ✨ Key Features
+## Features
 
-### 🎯 **Type Safety with Zero Runtime Cost**
+- **Compile-time market constraints** — futures-only methods like `setLeverage()` won't compile on spot clients
+- **Policy-based design** — exchange logic is encapsulated in policy classes (e.g. `BinancePolicy<MarketType::SPOT>`)
+- **Mixin extensions** — extend clients with custom functionality via variadic template template parameters
+- **Persistent HTTPS** — keep-alive connections with automatic reconnection (PIMPL hides Boost internals)
+- **Multi-endpoint WebSocket** — concurrent connections with per-endpoint callbacks
+
 ```cpp
-// Compile-time market validation using C++20 concepts
-rest::Client<BinanceConfig, MarketType::SPOT>    spot_client(api_key, secret);
-rest::Client<BinanceConfig, MarketType::FUTURES> futures_client(api_key, secret);
+using namespace trade_connector;
 
-spot_client.setLeverage("BTCUSDT", 10);    // ❌ Compile error - not available for SPOT
-futures_client.setLeverage("BTCUSDT", 10); // ✅ Compiles - futures only
+// Compile-time market validation
+SyncClient<BinancePolicy<MarketType::FUTURES>> futures(rest_host, ws_host, api_key, secret);
+futures.setLeverage(TokenPair::BTCUSDT, 10);  // OK — futures only
+
+SyncClient<BinancePolicy<MarketType::SPOT>> spot(rest_host, ws_host, api_key, secret);
+// spot.setLeverage(...)  // Won't compile — not available for SPOT
 ```
 
-### 🛡️ **Modern C++ Design**
-- C++20 concepts for compile-time constraints
-- Builder pattern for intuitive order construction
-- Template-based market specialization
-
 ---
 
-## 🚀 Quick Start
+## Prerequisites
 
-### Prerequisites
 ```bash
 # Ubuntu/Debian
-sudo apt install libssl-dev libboost-all-dev
-
-# Install IXWebSocket (required)
-git clone https://github.com/machinezone/IXWebSocket.git
-cd IXWebSocket && mkdir build && cd build
-cmake -DUSE_TLS=1 ..
-make -j4 && sudo make install
-
-# macOS
-brew install openssl boost ixwebsocket
+sudo apt install libssl-dev libboost-all-dev zlib1g-dev cmake g++
 ```
 
-### Installation
+simdjson and IXWebSocket are fetched automatically via CMake FetchContent.
 
-**TradeConnector is header-only!** Simply clone and include:
+## Building
 
 ```bash
 git clone https://github.com/slaymuel/tradeconnector.git
+cd tradeconnector
+mkdir build && cd build
+cmake ..
+make -j$(nproc)
 ```
 
-Add to your compiler flags:
+## Installation
+
 ```bash
-g++ -std=c++20 -O3 main.cpp -lssl -lcrypto -lboost_system -lixwebsocket -lpthread -o trader
+sudo cmake --install build
+# or install to a local prefix:
+cmake --install build --prefix ~/.local
 ```
 
-### Sending an order
+Downstream projects can then use:
 
-```cpp
-// main.cpp
-#include "tradeconnector/src/rest/client.h"
-#include "tradeconnector/src/rest/orderbuilder.h"
-
-using namespace trade_connector;
-
-int main() {
-    // Initialize REST client
-    rest::Client<BinanceConfig, MarketType::SPOT> client(
-        "testnet.binance.vision",  // Testnet for safety
-        "your_api_key",
-        "your_secret_key"
-    );
-
-    // Build and submit order using fluent API
-    auto order = rest::OrderBuilder<MarketType::SPOT>()
-        .symbol("BTCUSDT")
-        .side(Side::BUY)
-        .type(OrderType::LIMIT)
-        .price(50000.0)
-        .quantity(0.001)
-        .timeInForce(TimeInForce::GTC)
-        .build();
-
-    auto response = client.sendOrder(order);
-    std::cout << "Order placed: " << response << std::endl;
-
-    return 0;
-}
+```cmake
+find_package(trade_connector REQUIRED)
+target_link_libraries(my_app PRIVATE trade_connector::trade_connector)
 ```
+
+## Build options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `TC_BUILD_EXAMPLES` | OFF | Build example programs |
+| `TC_BUILD_BENCHMARKS` | OFF | Build benchmarks (requires Google Benchmark) |
 
 ---
 
-## 📖 Usage Examples
+## Quick Start
 
-### WebSocket Market Data Stream
+### Placing an order (Spot)
+
 ```cpp
-#include "tradeconnector/src/websocket/client.h"
-#include <simdjson.h>
+#include <clients/syncclient.h>
+#include <clients/binancepolicy.h>
+#include <configs.h>
 
 using namespace trade_connector;
 
 int main() {
-    // Empty credentials for public (unauthenticated) streams
-    websocket::Client ws_client("", "");
-
-    // Subscribe to real-time trades
-    ws_client.connectEndpoint(
-        +[](std::string_view msg) {
-            simdjson::ondemand::parser parser;
-            simdjson::padded_string padded(msg);
-            auto doc = parser.iterate(padded);
-
-            double price = doc["p"].get_double();
-            double qty   = doc["q"].get_double();
-
-            std::cout << "Trade: " << price << " @ " << qty << std::endl;
-        },
-        "stream.binance.com:9443",
-        "/ws/btcusdt@trade"
-    );
-
-    ws_client.wait();  // Keep running
-    return 0;
-}
-```
-
-### Futures Trading with Leverage
-```cpp
-#include "tradeconnector/src/rest/client.h"
-#include "tradeconnector/src/rest/orderbuilder.h"
-
-using namespace trade_connector;
-
-int main() {
-    rest::Client<BinanceConfig, MarketType::FUTURES> client(
+    SyncClient<BinancePolicy<MarketType::SPOT>> client(
+        BinanceConfig<MarketType::SPOT>::test_url,  // REST host
+        "stream.testnet.binance.vision",            // WS host
         "your_api_key",
         "your_secret_key"
     );
 
-    // Set leverage to 10x
-    client.setLeverage("BTCUSDT", 10);
-
-    // Set isolated margin mode
-    client.setMarginType("BTCUSDT", "ISOLATED");
-
-    // Place long position
-    auto order = rest::OrderBuilder<MarketType::FUTURES>()
-        .symbol("BTCUSDT")
-        .side(Side::BUY)
-        .type(OrderType::MARKET)
-        .quantity(0.1)
-        .positionSide(Side::LONG)
-        .build();
+    OrderParams<MarketType::SPOT> order{
+        .symbol    = TokenPair::BTCUSDT,
+        .side      = Side::BUY,
+        .type      = OrderType::LIMIT,
+        .price     = 50000.0,
+        .quantity  = 0.001,
+    };
 
     auto response = client.sendOrder(order);
     std::cout << response << std::endl;
-
-    return 0;
 }
 ```
 
-### Market Making Strategy
+### Streaming trades via WebSocket
+
 ```cpp
-#include "tradeconnector/src/rest/client.h"
-#include "tradeconnector/src/rest/orderbuilder.h"
-#include "tradeconnector/src/websocket/client.h"
+#include <clients/syncclient.h>
+#include <clients/binancepolicy.h>
 
 using namespace trade_connector;
 
-class MarketMaker {
-    rest::Client<BinanceConfig, MarketType::SPOT>& rest_client;
-    websocket::Client ws_client;
-    double best_bid = 0, best_ask = 0;
+int main() {
+    SyncClient<BinancePolicy<MarketType::SPOT>> client(
+        "testnet.binance.vision", "", "", ""
+    );
 
-public:
-    MarketMaker(rest::Client<BinanceConfig, MarketType::SPOT>& client)
-        : rest_client(client), ws_client("", "") {}
+    client.connectTradeFeed(
+        {TokenPair::BTCUSDT, TokenPair::ETHUSDT},
+        +[](std::string_view msg) {
+            std::cout << msg << std::endl;
+        }
+    );
 
-    void start(const std::string& symbol) {
-        // Subscribe to order book updates
-        ws_client.connectEndpoint(
-            [this](std::string_view msg) {
-                this->onOrderBookUpdate(msg);
-            },
-            "stream.binance.com:9443",
-            "/ws/" + symbol + "@depth@100ms"
-        );
+    client.websocketClient().wait();
+}
+```
 
-        ws_client.wait();
-    }
+### Futures with leverage
 
-private:
-    void onOrderBookUpdate(std::string_view msg) {
-        // Parse order book and update best_bid / best_ask
-        placeOrders();
-    }
+```cpp
+SyncClient<BinancePolicy<MarketType::FUTURES>> client(
+    BinanceConfig<MarketType::FUTURES>::test_url,
+    "stream.testnet.binance.vision",
+    api_key, secret_key
+);
 
-    void placeOrders() {
-        // Place bid slightly below best bid
-        auto bid = rest::OrderBuilder<MarketType::SPOT>()
-            .symbol("BTCUSDT")
-            .side(Side::BUY)
-            .type(OrderType::LIMIT)
-            .price(best_bid - 0.01)
-            .quantity(0.001)
-            .timeInForce(TimeInForce::GTC)
-            .build();
+client.setLeverage(TokenPair::BTCUSDT, 10);
+client.setMarginType(TokenPair::BTCUSDT, "ISOLATED");
 
-        rest_client.sendOrder(bid);
+OrderParams<MarketType::FUTURES> order{
+    .symbol        = TokenPair::BTCUSDT,
+    .side          = Side::BUY,
+    .type          = OrderType::MARKET,
+    .quantity      = 0.1,
+    .position_side = Side::LONG,
+};
 
-        // Place ask slightly above best ask
-        auto ask = rest::OrderBuilder<MarketType::SPOT>()
-            .symbol("BTCUSDT")
-            .side(Side::SELL)
-            .type(OrderType::LIMIT)
-            .price(best_ask + 0.01)
-            .quantity(0.001)
-            .timeInForce(TimeInForce::GTC)
-            .build();
+client.sendOrder(order);
+```
 
-        rest_client.sendOrder(ask);
+### Extending with mixins
+
+```cpp
+// Define a mixin that adds custom functionality
+template<class Base>
+struct LoggingExtension : Base {
+    void logTrade(const std::string& msg) {
+        // Access base client methods via CRTP
+        std::cout << "[TRADE] " << msg << std::endl;
     }
 };
+
+// Attach one or more extensions at compile time
+SyncClient<BinancePolicy<MarketType::SPOT>, LoggingExtension> client(
+    rest_host, ws_host, api_key, secret
+);
+client.logTrade("BTC filled");
 ```
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```
-tradeconnector/
-├── src/
-│   ├── configs.h          # Exchange endpoint configurations
-│   ├── types.h            # Core type definitions
-│   ├── rest/
-│   │   ├── client.h       # REST API client (template-based)
-│   │   └── orderbuilder.h # Fluent order builder
-│   ├── websocket/
-│   │   └── client.h       # IXWebSocket implementation
-│   └── utils/
-│       └── utils.h        # HMAC signing, timestamps, formatting
-└── README.md
+src/
+├── configs.h                  # Compile-time exchange endpoint configs (Binance, Kraken)
+├── types.h                    # MarketType, Side, OrderType, OrderParams, TokenPair, Error
+├── clients/
+│   ├── baseclient.h           # CRTP base — REST, WS, and policy dispatch
+│   ├── syncclient.h           # Synchronous client with mixin support
+│   ├── asyncclient.h          # Async client (placeholder)
+│   └── binancepolicy.h        # Binance exchange policy (REST + WS operations)
+├── rest/
+│   ├── client.h / client.cpp  # HTTPS REST client (Boost.Beast, PIMPL)
+│   └── orderbuilder.h         # (legacy) Order builder
+├── websocket/
+│   └── client.h / client.cpp  # Multi-endpoint WebSocket client (IXWebSocket)
+└── utils/
+    ├── signing.h / signing.cpp # HMAC-SHA256 signing
+    └── utils.h                 # Timestamps, string helpers, null logger
 ```
 
-### Header-Only Design
+### Design
 
-All implementation is contained in headers with `inline` functions and templates. Simply include the headers you need—no linking required (except for system dependencies like OpenSSL, Boost, and IXWebSocket).
-
-**Required Dependencies:**
-- OpenSSL (for HMAC signing and HTTPS)
-- Boost.Beast (for HTTP/HTTPS client)
-- Boost.Asio (for async I/O)
-- IXWebSocket (for WebSocket connections)
+- **`BaseClient<Derived, Config, M>`** — CRTP base that owns a `rest::Client` and `websocket::Client`. Dispatches trading operations to the `Config` policy using `if constexpr(requires(...))`.
+- **`SyncClient<Config, Extensions...>`** — concrete leaf that inherits `BaseClient` and zero or more mixin extensions via variadic template template parameters.
+- **`BinancePolicy<M>`** — stateless policy implementing Binance REST endpoints (order placement, account info, listen keys) and WebSocket streams (user data, depth, aggTrade). Market-specific methods are gated with `requires(IsFutures<M>)` / `requires(IsSpot<M>)`.
+- **`rest::Client`** — synchronous HTTPS client using Boost.Beast over OpenSSL with PIMPL to hide Boost headers from consumers.
+- **`websocket::Client`** — manages multiple concurrent WebSocket connections with per-endpoint function-pointer callbacks.
 
 ---
 
-## 🔌 Supported Exchanges
+## API Reference
+
+### BaseClient / SyncClient
+
+| Method | Description |
+|--------|-------------|
+| `sendOrder(params, error)` | Place an order |
+| `getAccountInfo()` | Account balances and info |
+| `getOpenOrders()` | All open orders |
+| `cancelAllOpenOrders()` | Cancel all open orders |
+| `connectTradeFeed(tokens, callback)` | Subscribe to aggregated trades |
+| `connectDepthFeed(tokens, callback)` | Subscribe to order book depth |
+| `connectUserDataFeed(callback, ...)` | Authenticated user data stream |
+| **Futures only** | |
+| `setLeverage(symbol, n)` | Adjust leverage (1-125x) |
+| `setMarginType(symbol, type)` | Set ISOLATED or CROSSED margin |
+| `getOpenPositions()` | Current positions and risk |
+
+### BinancePolicy (additional)
+
+| Method | Description |
+|--------|-------------|
+| `createListenKey(host)` | Create user data stream listen key |
+| `keepAliveListenKey(host, key)` | Extend listen key validity |
+| `closeListenKey(host, key)` | Close listen key |
+| `ping(host)` | Test connectivity |
+| `getServerTime(host)` | Exchange server time |
+| `getExchangeInfo(host)` | Trading rules and symbol info |
+| `getOrderBook(host, symbol, limit)` | Order book snapshot |
+| `getRecentTrades(host, symbol, limit)` | Recent trade list |
+
+---
+
+## Supported Exchanges
 
 | Exchange | Spot | Futures | Status |
 |----------|------|---------|--------|
-| Binance | ✅ | ✅ | Ready |
-| Coinbase | 🚧 | ❌ | Planned |
-| Kraken | 🚧 | ❌ | Planned |
-| OKX | 🚧 | 🚧 | Planned |
-
-*Want to add your favorite exchange? Contributions welcome!*
+| Binance  | Yes  | Yes     | Active |
+| Kraken   | Config only | —  | Experimental |
 
 ---
 
-## 📚 Documentation
+## Dependencies
 
-### API Reference
+| Library | Purpose | Linking |
+|---------|---------|---------|
+| [simdjson](https://github.com/simdjson/simdjson) | JSON parsing (exposed in policy headers) | PUBLIC |
+| [Boost.Beast/Asio](https://www.boost.org/) | HTTP/HTTPS REST client | PRIVATE (hidden by PIMPL) |
+| [OpenSSL](https://www.openssl.org/) | TLS and HMAC-SHA256 signing | PRIVATE |
+| [IXWebSocket](https://github.com/machinezone/IXWebSocket) | WebSocket connections | PRIVATE |
+| [zlib](https://zlib.net/) | Compression (IXWebSocket dependency) | PRIVATE |
 
-#### REST Client
-- `getAccountInfo()` - Retrieve account balances and info
-- `sendOrder(params)` - Place new order
-- `getOrderBook(symbol, limit)` - Get order book depth
-- `getRecentTrades(symbol, limit)` - Get recent trades
-- `createListenKey()` - Create WebSocket listen key
-- **Futures Only:**
-  - `setLeverage(symbol, leverage)` - Adjust leverage
-  - `setMarginType(symbol, type)` - Set margin mode
-  - `getOpenPositions()` - Get current positions
-
-#### WebSocket Client
-- `connectEndpoint(callback, host, path)` - Subscribe to stream
-- `send(endpoint, message)` - Send message to endpoint
-- `disconnect(endpoint)` - Close specific connection
-- `wait()` - Block until all connections close
-
-#### Order Builder
-```cpp
-OrderBuilder<MarketType>()
-    .symbol(string)              // Trading pair
-    .side(Side)                  // Side::BUY or Side::SELL
-    .type(OrderType)             // OrderType::LIMIT, OrderType::MARKET, etc.
-    .price(double)               // Limit price
-    .quantity(double)            // Amount to trade
-    .timeInForce(TimeInForce)    // TimeInForce::GTC, TimeInForce::IOC, TimeInForce::FOK
-    .quoteOrderQty(double)       // SPOT only: quote quantity
-    .reduceOnly(bool)            // FUTURES only
-    .positionSide(Side)          // FUTURES only: Side::LONG or Side::SHORT
-    .build()                  // Construct OrderParams
-```
+simdjson and IXWebSocket are fetched via CMake FetchContent. Boost, OpenSSL, and zlib must be installed on the system.
 
 ---
 
-## 🛠️ Advanced Configuration
+## License
 
-### Custom Exchange Endpoints
-```cpp
-// Create custom configuration
-template<>
-struct CustomConfig<MarketType::SPOT> {
-    static constexpr const char* url = "api.myexchange.com";
-    static constexpr const char* order = "/api/v1/order";
-    // ... define other endpoints
-};
-
-// Use custom config
-Client<CustomConfig, MarketType::SPOT> client(api_key, secret);
-```
-
----
-
-## 📜 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT — see [LICENSE](LICENSE) for details.

@@ -1,11 +1,5 @@
-/**
- * @file types.h
- * @brief Core type definitions and order parameter structures
- * 
- * This file defines fundamental types used throughout the trading connector,
- * including JSON parsing types, callback signatures, and market-specific
- * order parameter structures.
- */
+/// @file types.h
+/// @brief Core types, enums, and order parameter structures.
 
 #pragma once
 
@@ -14,52 +8,28 @@
 
 namespace trade_connector {
 
-/**
- * @enum MarketType
- * @brief Defines the type of trading market
- * 
- * Used as a template parameter to specialize exchange configurations
- * and trading behavior for different market types.
- */
+/// Market type selector for compile-time specialisation.
 enum class MarketType {
     SPOT,      ///< Spot trading market
     FUTURES,    ///< Futures/derivatives trading market
     GENERIC    ///< Generic market type
 };
 
-/**
- * @concept IsFutures
- * @brief Constrains template parameters to futures market type
- * 
- * This concept enables compile-time checks and method overloading
- * based on market type.
- * 
- * @tparam M Market type to validate
- */
+/// Constrains to futures (or generic) market type.
 template<MarketType M>
 concept IsFutures = M == MarketType::FUTURES || M == MarketType::GENERIC;
 
-/**
- * @concept IsSpot
- * @brief Constrains template parameters to spot market type
- * 
- * This concept enables compile-time checks and method overloading
- * based on market type.
- * 
- * @tparam M Market type to validate
- */
+/// Constrains to spot (or generic) market type.
 template<MarketType M>
 concept IsSpot = M == MarketType::SPOT || M == MarketType::GENERIC;
 
-/**
- * @enum ProtocolType
- * @brief Communication protocol types supported by exchanges
- */
+/// Communication protocol type.
 enum class ProtocolType {
     JSON,  ///< JSON-based REST/WebSocket protocol
     SBE    ///< Simple Binary Encoding (high-performance binary protocol)
 };
 
+/// Lightweight error type carrying a code and message.
 class Error {
     // Error codes:
     // 0 = No error
@@ -225,26 +195,11 @@ inline std::map<OrderType, std::string> orderTypeToString = {
     {OrderType::UNKNOWN, "UNKNOWN"}
 };
 
-/**
- * @struct OrderParams
- * @brief Template for market-specific order parameters
- * 
- * This template is specialized for each market type to provide appropriate
- * order parameters. Each specialization contains the exact fields required
- * for that market's order API.
- * 
- * @tparam M Market type (SPOT or FUTURES)
- */
+/// Market-specific order parameters (specialised per MarketType).
 template<MarketType M>
 struct OrderParams;
 
-/**
- * @struct OrderParams<MarketType::SPOT>
- * @brief Order parameters for spot market trading
- * 
- * Contains all parameters needed to place orders on spot markets.
- * Supports both base quantity and quote quantity order types.
- */
+/// Spot market order parameters.
  // Create OrderParams for simple, stop loss, take profit, oco etc in addition to STOP, FUTURES
 template<>
 struct OrderParams<MarketType::SPOT> {
@@ -264,13 +219,7 @@ struct OrderParams<MarketType::SPOT> {
     unsigned long timestamp = 0;     ///< Order timestamp in milliseconds (0 = auto-generate)
 };
 
-/**
- * @struct OrderParams<MarketType::FUTURES>
- * @brief Order parameters for futures market trading
- * 
- * Contains all parameters needed to place orders on futures markets.
- * Includes futures-specific fields like position side and reduce-only flag.
- */
+/// Futures market order parameters (includes position side and reduce-only).
 template<>
 struct OrderParams<MarketType::FUTURES> {
     std::string symbol;              ///< Trading pair symbol (e.g., "BTCUSDT")

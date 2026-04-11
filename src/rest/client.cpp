@@ -12,20 +12,10 @@
 
 namespace trade_connector::rest {
 
-/**
- * @typedef RequestString
- * @brief HTTP request type with string body
- * 
- * Used for POST/PUT requests that need to send data in the request body.
- */
+/// HTTP request with string body (POST/PUT).
 using RequestString = boost::beast::http::request<boost::beast::http::string_body>;
 
-/**
- * @typedef RequestEmpty
- * @brief HTTP request type with no body
- * 
- * Used for GET/DELETE requests that don't send data in the request body.
- */
+/// HTTP request with no body (GET/DELETE).
 using RequestEmpty = boost::beast::http::request<boost::beast::http::empty_body>;
 
 struct Client::Impl {
@@ -125,7 +115,8 @@ std::string Client::readFromStream(
         return "";
     }
 
-    return res.body();
+    // RVO does not apply here because res.body() returns a reference.
+    return std::move(res.body());
 }
 
 void Client::reconnectStream() {

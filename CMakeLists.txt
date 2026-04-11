@@ -1,10 +1,12 @@
 cmake_minimum_required(VERSION 3.20)
-project(trade_connector LANGUAGES CXX)
+project(trade_connector VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+# Enable flto
 
 # --- External dependencies ---
 
@@ -39,7 +41,11 @@ FetchContent_Declare(
     GIT_TAG        v11.4.5
     GIT_SHALLOW    TRUE
 )
-FetchContent_MakeAvailable(ixwebsocket)
+FetchContent_GetProperties(ixwebsocket)
+if(NOT ixwebsocket_POPULATED)
+    FetchContent_Populate(ixwebsocket)
+    add_subdirectory(${ixwebsocket_SOURCE_DIR} ${ixwebsocket_BINARY_DIR} EXCLUDE_FROM_ALL)
+endif()
 
 # --- trade_connector static library ---
 
@@ -57,11 +63,14 @@ target_include_directories(trade_connector PUBLIC
 )
 
 target_link_libraries(trade_connector PUBLIC
+    simdjson
+)
+
+target_link_libraries(trade_connector PRIVATE
     Boost::system
     OpenSSL::SSL
     OpenSSL::Crypto
     ZLIB::ZLIB
-    simdjson
     ixwebsocket
 )
 
@@ -83,3 +92,48 @@ if(TC_BUILD_BENCHMARKS)
     add_executable(bench_sendorder benchmarks/bench_sendorder.cpp)
     target_link_libraries(bench_sendorder PRIVATE trade_connector benchmark::benchmark)
 endif()
+
+# --- Installation ---
+
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+
+install(TARGETS trade_connector
+    EXPORT trade_connectorTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+
+# Install public headers preserving directory structure
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/src/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/trade_connector
+    FILES_MATCHING PATTERN "*.h"
+)
+
+# Install the exported targets file
+install(EXPORT trade_connectorTargets
+    FILE trade_connectorTargets.cmake
+    NAMESPACE trade_connector::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/trade_connector
+)
+
+# Generate and install the package config files
+configure_package_config_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/trade_connectorConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/trade_connectorConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/trade_connector
+)
+
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/trade_connectorConfigVersion.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
+
+install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/trade_connectorConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/trade_connectorConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/trade_connector
+)
