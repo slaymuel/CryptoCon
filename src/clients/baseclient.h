@@ -15,39 +15,41 @@ class BaseClient{
 public:
 
     BaseClient(
-        const std::string& rest_host, 
-        const std::string& ws_host, 
         const std::string& api_key, 
         const std::string& secret_key, 
         std::function<void(const std::string&)> logger = null_logger) 
-        : rest_host(rest_host), 
-          ws_host(ws_host), 
-          api_key(api_key), 
+        : api_key(api_key), 
           secret_key(secret_key), 
-          rest_client(rest_host, logger), 
-          ws_client(api_key, secret_key, logger), 
-          logger(logger){
-        // SyncClient or AsyncClient
-        derived = static_cast<Derived&>(*this);
-    }
+          rest_client(config.restHost(), logger), 
+          ws_client(config.wsHost(), api_key, secret_key, logger), 
+          logger(logger),
+          derived(static_cast<Derived&>(*this)){}
 
-    const std::string& apiKey(){
+    const std::string& apiKey() const {
         return api_key;
     }
 
-    const std::string& secretKey(){
+    const std::string& secretKey() const {
         return secret_key;
     }
 
-    rest::Client& restClient(){
+    rest::Client& restClient() {
         return rest_client;
     }
 
-    websocket::Client& websocketClient(){
+    const rest::Client& restClient() const {
+        return rest_client;
+    }
+
+    websocket::Client& websocketClient() {
         return ws_client;
     }
 
-    std::string buildQuery(const OrderParams<M>& params){
+    const websocket::Client& websocketClient() const {
+        return ws_client;
+    }
+
+    std::string buildQuery(const OrderParams<M>& params) const {
         return config.buildQuery(params);
     }
 
@@ -90,10 +92,32 @@ public:
         }
     }
 
+    std::string getOrderBook(const TokenPair& symbol, int limit = 100) {
+        if constexpr(requires(Config c, BaseClient& b, const TokenPair& s, int l){c.getOrderBook(b, s, l); }) {
+            return config.getOrderBook(*this, symbol, limit);
+        } else {
+            logger("getOrderBook is not implemented for this client configuration");
+            return "";
+        }
+    }
+
+    std::string cancelOrder(const TokenPair& symbol, uint64_t order_id, Error& error = dummy_error) {
+        if constexpr(requires(Config c, BaseClient& b, const TokenPair& s, uint64_t o, Error& e){c.cancelOrder(b, s, o, e); }) {
+            return config.cancelOrder(*this, symbol, order_id, error);
+        } else {
+            logger("cancelOrder is not implemented for this client configuration");
+            return "";
+        }
+    }
+
     bool isConnected(const std::string& endpoint) const {
         return ws_client.isConnected(endpoint);
     }
     
+    void disconnect(const std::string& endpoint) {
+        ws_client.disconnect(endpoint);
+    }
+
     /// Overload that forwards to Config::sendOrder with an explicit host.
     std::string sendOrder(auto& host, const OrderParams<M>& params, Error& error = dummy_error) {
         return config.sendOrder(host, params, error);
@@ -103,14 +127,12 @@ public:
     template<typename Callback>
     void connectUserDataFeed(
         Callback callback,
-        //const std::string& host = "ws-api.binance.com:443",
-        const std::string& host = "ws-api.testnet.binance.vision",
         const std::string& path = "/ws-api/v3",
-        std::uint64_t request_id = 1,
-        std::uint64_t recv_window = 5000
+        const std::uint64_t request_id = 1,
+        const std::uint64_t recv_window = 5000
     ){
-        if constexpr(requires(Config c, BaseClient& b, Callback cb, const std::string& h, const std::string& p, std::uint64_t r, std::uint64_t rw){c.connectUserDataFeed(b, cb, h, p, r, rw); }) {
-            return config.connectUserData(*this, callback, host, path, request_id, recv_window);
+        if constexpr(requires(Config c, BaseClient& b, Callback cb, const std::string& p, const std::uint64_t rid, const std::uint64_t rw){c.connectUserDataFeed(b, cb, p, rid, rw); }) {
+            return config.connectUserDataFeed(*this, callback, path, request_id, recv_window);
         } else {
             logger("connectUserData is not implemented for this client configuration");
         }
@@ -136,14 +158,14 @@ public:
         }
     }
 
+public:
+    std::function<void(const std::string&)> logger;  ///< Logger instance for logging messages
+
 protected:
-    const std::string rest_host;     ///< Exchange REST API hostname
-    const std::string ws_host;       ///< Exchange WebSocket API hostname
     const std::string secret_key;    ///< Exchange secret key for request signing
     const std::string api_key;       ///< Exchange API key for authentication
     websocket::Client ws_client;
     rest::Client rest_client;
-    std::function<void(const std::string&)> logger;  ///< Logger instance for logging messages
 
 private:
     Derived& derived;

@@ -7,6 +7,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Enable flto
+option(TC_ENABLE_LTO "Enable link-time optimization" OFF)
+if(TC_ENABLE_LTO)
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
+endif()
 
 # --- External dependencies ---
 
@@ -44,7 +48,7 @@ FetchContent_Declare(
 FetchContent_GetProperties(ixwebsocket)
 if(NOT ixwebsocket_POPULATED)
     FetchContent_Populate(ixwebsocket)
-    add_subdirectory(${ixwebsocket_SOURCE_DIR} ${ixwebsocket_BINARY_DIR} EXCLUDE_FROM_ALL)
+    add_subdirectory(${ixwebsocket_SOURCE_DIR} ${ixwebsocket_BINARY_DIR})
 endif()
 
 # --- trade_connector static library ---
@@ -80,8 +84,8 @@ target_compile_features(trade_connector PUBLIC cxx_std_20)
 
 option(TC_BUILD_EXAMPLES "Build example programs" OFF)
 if(TC_BUILD_EXAMPLES)
-    add_executable(kraken_example examples/kraken_websocket.cpp)
-    target_link_libraries(kraken_example PRIVATE trade_connector)
+    add_executable(binance_trade_feed_mixin examples/binance_trade_feed_mixin.cpp)
+    target_link_libraries(binance_trade_feed_mixin PRIVATE trade_connector)
 endif()
 
 # --- Benchmarks (optional) ---

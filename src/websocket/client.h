@@ -15,11 +15,14 @@ namespace trade_connector::websocket {
 class Client {
     
 public:
-    using MessageCallback = void(*)(std::string_view);
+    // ixwebsocket already use std::function for callbacks, so 
+    // we can just forward those types.
+    using MessageCallback = std::function<void(std::string_view)>;
     using OnWSOpen        = std::function<void(const std::string&)>;
 
     /// Construct with API credentials and optional logger.
     Client(
+        const std::string& ws_host,
         const std::string& api_key, 
         const std::string& secret_key,
         std::function<void(const std::string&)> logger = trade_connector::null_logger
@@ -98,7 +101,8 @@ private:
             on_open
         );
     }
-
+    
+    const std::string ws_host;
     const std::string api_key;       ///< API key for authenticated endpoints (if needed)
     const std::string secret_key;    ///< Secret key for signing (if needed)
     struct ConnectionData;

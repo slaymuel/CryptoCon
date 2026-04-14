@@ -12,13 +12,15 @@ namespace trade_connector::websocket {
 struct Client::ConnectionData {
     std::string endpoint;                    ///< Full WebSocket URL (wss://host/path)
     std::unique_ptr<ix::WebSocket> ws;       ///< WebSocket connection instance
+    bool was_open = false;                   ///< True once the connection has been established
 };
 
 Client::Client(
+    const std::string& ws_host,
     const std::string& api_key, 
     const std::string& secret_key,
     std::function<void(const std::string&)> logger
-) : api_key(api_key), secret_key(secret_key), logger(logger) {};
+) : ws_host(ws_host), api_key(api_key), secret_key(secret_key), logger(logger) {};
 
 Client::~Client() {
     disconnectAll();
@@ -49,7 +51,7 @@ void Client::addConnection(
 
     // Set message callback - captures callback by value (function pointer)
     conn_data->ws->setOnMessageCallback(
-        [this, callback, url, ws_ptr, on_open](const ix::WebSocketMessagePtr& msg) {
+        [this, callback, url, ws_ptr, on_open, conn = conn_data.get()](const ix::WebSocketMessagePtr& msg) {
             switch (msg->type) {
                 case ix::WebSocketMessageType::Message:
                     // Zero-copy string_view - no allocation
@@ -61,6 +63,7 @@ void Client::addConnection(
                     break;
 
                 case ix::WebSocketMessageType::Open:
+                    conn->was_open = true;
                     logger("Websocket connection to " + url + " established.");
                     try {
                         on_open(url);
@@ -146,10 +149,10 @@ void Client::wait() {
     while (!connections.empty()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         
-        // Remove dead connections
+        // Remove dead connections (only those that were previously open)
         for (auto it = connections.begin(); it != connections.end();) {
             if (!it->second->ws || 
-                it->second->ws->getReadyState() == ix::ReadyState::Closed) {
+                (it->second->was_open && it->second->ws->getReadyState() == ix::ReadyState::Closed)) {
                 logger("Removing closed connection: " + it->first);
                 it = connections.erase(it);
             } else {

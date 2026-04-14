@@ -8,16 +8,14 @@ namespace trade_connector{
     /// @tparam Config      Exchange policy (e.g. BinancePolicy<MarketType::SPOT>)
     /// @tparam Extensions  Zero or more CRTP mixin templates for user-defined functionality
     template<typename Config, template<class> class... Extensions>
-    class SyncClient : public BaseClient<SyncClient<Config, Extensions...>, Config>, 
+    class SyncClient : public BaseClient<SyncClient<Config, Extensions...>, Config, Config::market_type>, 
                        public Extensions<SyncClient<Config, Extensions...>>... {
         public:
         SyncClient(
-            const std::string& rest_host,
-            const std::string& ws_host,
-            const std::string& api_key, 
-            const std::string& secret_key, 
-        std::function<void(const std::string&)> logger = null_logger) 
-        : BaseClient<SyncClient<Config, Extensions...>, Config>(rest_host, ws_host, api_key, secret_key, logger) {}
+            const std::string& api_key = "", 
+            const std::string& secret_key = "", 
+            std::function<void(const std::string&)> logger = null_logger) 
+        : BaseClient<SyncClient<Config, Extensions...>, Config, Config::market_type>(api_key, secret_key, logger) {}
 
         SyncClient(const SyncClient&) = delete;
         SyncClient& operator=(const SyncClient&) = delete;

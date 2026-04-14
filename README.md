@@ -20,11 +20,11 @@ A type-safe static library with REST ([Boost.Beast](https://www.boost.org/doc/li
 ```cpp
 using namespace trade_connector;
 
-// Compile-time market validation
-SyncClient<BinancePolicy<MarketType::FUTURES>> futures(rest_host, ws_host, api_key, secret);
+// Compile-time market validation — hosts are configured on the policy
+SyncClient<BinancePolicy<MarketType::FUTURES>> futures(api_key, secret);
 futures.setLeverage(TokenPair::BTCUSDT, 10);  // OK — futures only
 
-SyncClient<BinancePolicy<MarketType::SPOT>> spot(rest_host, ws_host, api_key, secret);
+SyncClient<BinancePolicy<MarketType::SPOT>> spot(api_key, secret);
 // spot.setLeverage(...)  // Won't compile — not available for SPOT
 ```
 
@@ -68,6 +68,7 @@ target_link_libraries(my_app PRIVATE trade_connector::trade_connector)
 
 | Option | Default | Description |
 |--------|---------|-------------|
+| `ENABLE_LTO` | OFF | Enable link-time optimization (requires matching compiler toolchain) |
 | `TC_BUILD_EXAMPLES` | OFF | Build example programs |
 | `TC_BUILD_BENCHMARKS` | OFF | Build benchmarks (requires Google Benchmark) |
 
@@ -80,14 +81,12 @@ target_link_libraries(my_app PRIVATE trade_connector::trade_connector)
 ```cpp
 #include <clients/syncclient.h>
 #include <clients/binancepolicy.h>
-#include <configs.h>
 
 using namespace trade_connector;
 
 int main() {
+    // Hosts are defined on the policy (BinancePolicy::BINANCE_REST_HOST, etc.)
     SyncClient<BinancePolicy<MarketType::SPOT>> client(
-        BinanceConfig<MarketType::SPOT>::test_url,  // REST host
-        "stream.testnet.binance.vision",            // WS host
         "your_api_key",
         "your_secret_key"
     );
@@ -114,9 +113,7 @@ int main() {
 using namespace trade_connector;
 
 int main() {
-    SyncClient<BinancePolicy<MarketType::SPOT>> client(
-        "testnet.binance.vision", "", "", ""
-    );
+    SyncClient<BinancePolicy<MarketType::SPOT>> client;
 
     client.connectTradeFeed(
         {TokenPair::BTCUSDT, TokenPair::ETHUSDT},
@@ -132,11 +129,7 @@ int main() {
 ### Futures with leverage
 
 ```cpp
-SyncClient<BinancePolicy<MarketType::FUTURES>> client(
-    BinanceConfig<MarketType::FUTURES>::test_url,
-    "stream.testnet.binance.vision",
-    api_key, secret_key
-);
+SyncClient<BinancePolicy<MarketType::FUTURES>> client(api_key, secret_key);
 
 client.setLeverage(TokenPair::BTCUSDT, 10);
 client.setMarginType(TokenPair::BTCUSDT, "ISOLATED");
@@ -155,20 +148,64 @@ client.sendOrder(order);
 ### Extending with mixins
 
 ```cpp
-// Define a mixin that adds custom functionality
-template<class Base>
-struct LoggingExtension : Base {
-    void logTrade(const std::string& msg) {
-        // Access base client methods via CRTP
-        std::cout << "[TRADE] " << msg << std::endl;
+// A mixin that adds a rate limiter to order placement
+template<class Derived>
+struct RateLimiter {
+    std::string sendOrderThrottled(const auto& params, 
+                                   std::chrono::milliseconds min_interval 
+                                       = std::chrono::milliseconds(100)) {
+        auto& self = static_cast<Derived&>(*this);
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            now - last_order_time_
+        );
+
+        if (elapsed < min_interval) {
+            self.logger("Order throttled — " 
+                + std::to_string((min_interval - elapsed).count()) + "ms remaining");
+            return "";
+        }
+
+        last_order_time_ = now;
+        return self.sendOrder(params);
     }
+
+private:
+    std::chrono::steady_clock::time_point last_order_time_{};
 };
 
-// Attach one or more extensions at compile time
-SyncClient<BinancePolicy<MarketType::SPOT>, LoggingExtension> client(
-    rest_host, ws_host, api_key, secret
+// A mixin that tracks P&L across fills
+template<class Derived>
+struct PnLTracker {
+    void recordFill(Side side, double price, double qty) {
+        double signed_qty = (side == Side::BUY) ? qty : -qty;
+        position_ += signed_qty;
+        realized_pnl_ -= signed_qty * price;  // cash flow
+    }
+
+    double unrealizedPnL(double mark_price) const {
+        return realized_pnl_ + position_ * mark_price;
+    }
+
+    double position() const { return position_; }
+
+private:
+    double position_ = 0.0;
+    double realized_pnl_ = 0.0;
+};
+
+// Compose multiple mixins at compile time
+SyncClient<BinancePolicy<MarketType::SPOT>, RateLimiter, PnLTracker> client(
+    api_key, secret
 );
-client.logTrade("BTC filled");
+
+// Use the rate-limited order method from RateLimiter
+OrderParams<MarketType::SPOT> order{ /* ... */ };
+client.sendOrderThrottled(order, std::chrono::milliseconds(200));
+
+// Track fills from PnLTracker
+client.recordFill(Side::BUY, 67500.0, 0.01);
+std::cout << "Unrealized P&L: " << client.unrealizedPnL(68000.0) << std::endl;
 ```
 
 ---
@@ -196,9 +233,9 @@ src/
 
 ### Design
 
-- **`BaseClient<Derived, Config, M>`** — CRTP base that owns a `rest::Client` and `websocket::Client`. Dispatches trading operations to the `Config` policy using `if constexpr(requires(...))`.
-- **`SyncClient<Config, Extensions...>`** — concrete leaf that inherits `BaseClient` and zero or more mixin extensions via variadic template template parameters.
-- **`BinancePolicy<M>`** — stateless policy implementing Binance REST endpoints (order placement, account info, listen keys) and WebSocket streams (user data, depth, aggTrade). Market-specific methods are gated with `requires(IsFutures<M>)` / `requires(IsSpot<M>)`.
+- **`BaseClient<Derived, Config, M>`** — CRTP base that owns a `rest::Client` and `websocket::Client`. Host endpoints are obtained from the `Config` policy at construction time. Dispatches trading operations to the `Config` policy using `if constexpr(requires(...))`.
+- **`SyncClient<Config, Extensions...>`** — concrete leaf that inherits `BaseClient` and zero or more mixin extensions via variadic template template parameters. Constructor takes only API key, secret key, and an optional logger.
+- **`BinancePolicy<M>`** — policy implementing Binance REST endpoints (order placement, account info, listen keys) and WebSocket streams (user data, depth, aggTrade). Stores host configuration as `static constexpr` members. Market-specific methods are gated with `requires(IsFutures<M>)` / `requires(IsSpot<M>)`.
 - **`rest::Client`** — synchronous HTTPS client using Boost.Beast over OpenSSL with PIMPL to hide Boost headers from consumers.
 - **`websocket::Client`** — manages multiple concurrent WebSocket connections with per-endpoint function-pointer callbacks.
 

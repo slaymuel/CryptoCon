@@ -16,9 +16,10 @@ class BinancePolicy {
     using Headers = std::span<const std::pair<std::string, std::string>>;
 
 public:
+    static constexpr MarketType market_type = M;
     static constexpr const char* BINANCE_WS_USER_HOST = "ws-api.testnet.binance.vision";
     static constexpr const char* BINANCE_WS_HOST = "stream.testnet.binance.vision";
-    static constexpr const char* BINANCE_REST_HOST = "api.binance.com";
+    static constexpr const char* BINANCE_REST_HOST = "testnet.binance.vision";
 
     BinancePolicy(
         std::function<void(const std::string&)> logger = null_logger
@@ -33,10 +34,18 @@ public:
 
     ~BinancePolicy() = default;
 
+    const char* restHost() {
+        return BINANCE_REST_HOST;
+    }
+
+    const char* wsHost() {
+        return BINANCE_WS_HOST;
+    }
+
     /// Create a listen key for user data streams (valid 60 min).
     std::string createListenKey(auto& host) {
         std::pair<std::string, std::string> headers[] = {
-            {"X-MBX-APIKEY", host.api_key}
+            {"X-MBX-APIKEY", host.apiKey()}
         };
 
         auto response = host.post("/api/v3/userDataStream", headers);
@@ -59,18 +68,18 @@ public:
     std::string keepAliveListenKey(auto& host, const std::string& listen_key){
         std::string target = std::format("/api/v3/userDataStream?listenKey={}", listen_key);
         std::pair<std::string, std::string> headers[] = {
-            {"X-MBX-APIKEY", host.api_key}
+            {"X-MBX-APIKEY", host.apiKey()}
         };
-        return put(target, headers);
+        return host.restClient().put(target, headers);
     }
 
     /// Close and invalidate a listen key.
     std::string closeListenKey(auto& host, const std::string& listen_key){
         std::string target = std::format("/api/v3/userDataStream?listenKey={}", listen_key);
         std::pair<std::string, std::string> headers[] = {
-            {"X-MBX-APIKEY", host.api_key}
+            {"X-MBX-APIKEY", host.apiKey()}
         };
-        return del(target, headers);
+        return host.restClient().del(target, headers);
     }
 
     /// Retrieve account info (balances, permissions, commission rates).
@@ -78,14 +87,14 @@ public:
         std::string query = "timestamp=" + std::to_string(currentTimeMillis())
                 + "&recvWindow=5000";
 
-        std::string signature = signHMAC(host.secret_key, query);
+        std::string signature = signHMAC(host.secretKey(), query);
         std::string target = std::format("/api/v3/account?{}&signature={}", query, signature);
         //std::string target = "/api/v3/account?" + query + "&signature=" + signature;
         std::pair<std::string, std::string> headers[] = {
-            {"X-MBX-APIKEY", host.api_key}
+            {"X-MBX-APIKEY", host.apiKey()}
         };
 
-        return get(target, headers);
+        return host.restClient().get(target, headers);
     }
 
     /// Get open positions — futures only.
@@ -93,30 +102,30 @@ public:
         std::string query = "timestamp=" + std::to_string(currentTimeMillis())
                 + "&recvWindow=5000";
 
-        std::string signature = signHMAC(host.secret_key, query);
+        std::string signature = signHMAC(host.secretKey(), query);
         std::string target = std::format("{}?{}&signature={}", "/api/v3/openOrders", query, signature);
         //std::string target = "/fapi/v2/positionRisk?" + query + "&signature=" + signature;
         std::pair<std::string, std::string> headers[] = {
-            {"X-MBX-APIKEY", host.api_key}
+            {"X-MBX-APIKEY", host.apiKey()}
         };
 
-        return get(target, headers);
+        return host.restClient().get(target, headers);
     }
 
     /// Ping the exchange (connectivity test, no auth required).
     std::string ping(auto& host){
         std::string target = "/api/v3/ping";
-        return host.rest_client.get(target);
+        return host.restClient().get(target);
     }
 
     /// Get server time (milliseconds since epoch). Useful for clock sync.
     std::string getServerTime(auto& host){
-        return host.rest_client.get("/api/v3/time");
+        return host.restClient().get("/api/v3/time");
     }
 
     /// Get exchange info (trading rules, symbol filters, rate limits).
     std::string getExchangeInfo(auto& host){
-        return host.rest_client.get("/api/v3/exchangeInfo");
+        return host.restClient().get("/api/v3/exchangeInfo");
     }
 
     /// Get all open orders — spot only.
@@ -124,14 +133,14 @@ public:
         std::string query = "timestamp=" + std::to_string(currentTimeMillis())
                 + "&recvWindow=5000";
 
-        std::string signature = signHMAC(host.secret_key, query);
+        std::string signature = signHMAC(host.secretKey(), query);
         std::string target = std::format("{}?{}&signature={}", "/api/v3/openOrders", query, signature);
         //std::string target = "/api/v3/openOrders?" + query + "&signature=" + signature;
         std::pair<std::string, std::string> headers[] = {
-            {"X-MBX-APIKEY", host.api_key}
+            {"X-MBX-APIKEY", host.apiKey()}
         };
 
-        return host.rest_client.get(target, headers);
+        return host.restClient().get(target, headers);
     }
 
     /// Cancel all open orders by fetching and iterating them — spot only.
@@ -148,7 +157,7 @@ public:
                 auto it = Binance::stringToTokenPair.find(order["symbol"].get_string().value());
                 auto symbol = it->second;
                 uint64_t order_id = order["orderId"].get_uint64().value();
-                cancelOrder(symbol, order_id);
+                host.cancelOrder(symbol, order_id);
             }
         }
         catch(const simdjson::simdjson_error& e){
@@ -160,13 +169,13 @@ public:
     /// Get order book depth for a symbol. @param limit Valid: 5, 10, 20, 50, 100, 500, 1000, 5000.
     std::string getOrderBook(auto& host, const TokenPair& symbol, int limit = 100){
         std::string target = std::format("{}?symbol={}&limit={}", "/api/v3/depth", Binance::tokenPairToString[symbol], limit);
-        return host.rest_client.get(target);
+        return host.restClient().get(target);
     }
 
     /// Get recent trades for a symbol. @param limit Max 1000.
     std::string getRecentTrades(auto& host, const TokenPair& symbol, int limit = 500){
         std::string target = std::format("{}?symbol={}&limit={}", "/api/v3/trades", Binance::tokenPairToString[symbol], limit);
-        return host.rest_client.get(target);
+        return host.restClient().get(target);
     }
 
     /// Place an order. Supports LIMIT, MARKET, STOP_LOSS, TAKE_PROFIT, OCO, etc.
@@ -174,7 +183,7 @@ public:
     std::string sendOrder(auto& host, const T& params) {
         // buildquery also templated since now params is different for oco, market, limit etc
         std::string query = buildQuery(params);
-        std::string signature = signHMAC(host.secret_key, query);
+        std::string signature = signHMAC(host.secretKey(), query);
         auto endpoint = (params.type == OrderType::OCO) ? "/api/v3/order/oco" : "/api/v3/order";
         std::string target = std::format("{}?{}&signature={}", endpoint, query, signature);
         return sendOrder(host, target);
@@ -183,7 +192,7 @@ public:
     /// Send order with market-type-specific params and error reporting.
     std::string sendOrder(auto& host, const OrderParams<M>& params, Error& error = dummy_error) {
         std::string query = buildQuery(params);
-        std::string signature = signHMAC(host.secret_key, query);
+        std::string signature = signHMAC(host.secretKey(), query);
         auto endpoint = (params.type == OrderType::OCO) ? "/api/v3/order/oco" : "/api/v3/order";
         std::string target = std::format("{}?{}&signature={}", endpoint, query, signature);
         return sendOrder(host, target, error);
@@ -192,10 +201,10 @@ public:
     /// Low-level: POST a pre-built signed target URL as an order.
     std::string sendOrder(auto& host, std::string target, Error& error = dummy_error) {
         std::pair<std::string, std::string> headers[] = {
-            {"X-MBX-APIKEY", host.api_key}
+            {"X-MBX-APIKEY", host.apiKey()}
         };
         
-        return host.rest_client.post(target, headers, "", error);
+        return host.restClient().post(target, headers, "", error);
     }
 
     /// Build URL-encoded query string from spot order params (auto-timestamps).
@@ -401,14 +410,14 @@ public:
             .append("&orderId=");
         appendNumber(query, order_id);
 
-        std::string signature = signHMAC(host.secret_key, query);
+        std::string signature = signHMAC(host.secretKey(), query);
         std::string target = std::format("{}?{}&signature={}", "/api/v3/order", query, signature);
 
         std::pair<std::string, std::string> headers[] = {
-            {"X-MBX-APIKEY", host.api_key}
+            {"X-MBX-APIKEY", host.apiKey()}
         };
 
-        return del(target, headers, error);
+        return host.restClient().del(target, headers, error);
     }
 
     /// Set leverage for a symbol — futures only (1–125x depending on symbol/tier).
@@ -418,14 +427,14 @@ public:
             + "&timestamp=" + std::to_string(currentTimeMillis())
             + "&recvWindow=5000";
 
-        std::string signature = signHMAC(host.secret_key, query);
+        std::string signature = signHMAC(host.secretKey(), query);
         std::string target = "/fapi/v1/leverage?" + query + "&signature=" + signature;
         
         std::pair<std::string, std::string> headers[] = {
-            {"X-MBX-APIKEY", host.api_key}
+            {"X-MBX-APIKEY", host.apiKey()}
         };
     
-        return host.rest_client.post(target, headers);
+        return host.restClient().post(target, headers);
     }
 
     /// Set margin type ("ISOLATED" or "CROSSED") — futures only.
@@ -435,14 +444,14 @@ public:
             + "&timestamp=" + std::to_string(currentTimeMillis())
             + "&recvWindow=5000";
 
-        std::string signature = sign(host.secret_key, query);
+        std::string signature = sign(host.secretKey(), query);
         std::string target = "/fapi/v1/marginType?" + query + "&signature=" + signature;
         
         std::pair<std::string, std::string> headers[] = {
-            {"X-MBX-APIKEY", host.api_key}
+            {"X-MBX-APIKEY", host.apiKey()}
         };
     
-        return host.rest_client.post(target, headers);
+        return host.restClient().post(target, headers);
     }
 
     /// Subscribe to user data stream via WebSocket API using HMAC signature.
@@ -450,17 +459,17 @@ public:
     void connectUserDataFeed(
         auto& host,
         Callback callback,
-        std::uint64_t request_id = 1,
-        std::uint64_t recv_window = 5000,
-        const std::string& path = "/ws-api/v3"
+        const std::string& path = "/ws-api/v3",
+        const std::uint64_t request_id = 1,
+        const std::uint64_t recv_window = 5000
     ) {
-        host.ws_client.connectEndpoint(
+        host.websocketClient().connectEndpoint(
             callback,
             BINANCE_WS_USER_HOST,
             path,
             // TODO make alias for ix::WebSocket
             [this, request_id, recv_window, &host](const std::string& url) {
-                if (host.api_key.empty() || host.secret_key.empty()) {
+                if (host.apiKey().empty() || host.secretKey().empty()) {
                     host.logger("Cannot subscribe (signature) to Binance user data stream on " + url + ": API key/secret key is empty");
                     return;
                 }
@@ -468,7 +477,7 @@ public:
                 const std::uint64_t timestamp = currentTimeMillis();
 
                 // Signature payload must use the same parameter ordering as sent.
-                std::string signature_payload = "apiKey=" + host.api_key;
+                std::string signature_payload = "apiKey=" + host.apiKey();
 
                 if (recv_window > 0) {
                     signature_payload += "&recvWindow=" + std::to_string(recv_window);
@@ -476,11 +485,11 @@ public:
 
                 signature_payload += "&timestamp=" + std::to_string(timestamp);
 
-                const std::string signature = signHMAC(host.secret_key, signature_payload);
+                const std::string signature = signHMAC(host.secretKey(), signature_payload);
 
                 std::string subscribe_message =
                     "{\"id\":" + std::to_string(request_id) +
-                    ",\"method\":\"userDataStream.subscribe.signature\",\"params\":{\"apiKey\":\"" + host.api_key + "\"";
+                    ",\"method\":\"userDataStream.subscribe.signature\",\"params\":{\"apiKey\":\"" + host.apiKey() + "\"";
 
                 if (recv_window > 0) {
                     subscribe_message += ",\"recvWindow\":" + std::to_string(recv_window);
@@ -490,7 +499,7 @@ public:
                     ",\"timestamp\":" + std::to_string(timestamp) +
                     ",\"signature\":\"" + signature + "\"}}";
 
-                bool result = host.ws_client.send(url, subscribe_message);
+                bool result = host.websocketClient().send(url, subscribe_message);
                 if (!result) {
                     host.logger("Failed to subscribe (signature) to Binance user data stream on " + url);
                 } else {
@@ -516,9 +525,8 @@ public:
         }
 
         const std::string address = std::format("wss://{}{}", BINANCE_WS_HOST, s);
-        host.logger("Connected to Binance Depth Data Feed at address: {}", address);
 
-        host.ws_client.connectEndpoint(
+        host.websocketClient().connectEndpoint(
             callback,
             BINANCE_WS_HOST,
             s
@@ -544,9 +552,8 @@ public:
         }
 
         const std::string address = std::format("wss://{}{}", BINANCE_WS_HOST, aggregate);
-        host.logger("Connecting to Binance Market Data Feed: {}", address);
 
-        host.ws_client.connectEndpoint(
+        host.websocketClient().connectEndpoint(
             callback,
             BINANCE_WS_HOST,
             aggregate
