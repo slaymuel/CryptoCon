@@ -1,7 +1,7 @@
 #include <iostream>
 #include <atomic>
 #include <clients/syncclient.h>
-#include <clients/binancepolicy.h>
+#include <policies/binancepolicy.h>
 
 using namespace trade_connector;
 

@@ -25,6 +25,9 @@ public:
           logger(logger),
           derived(static_cast<Derived&>(*this)){}
 
+    BaseClient& operator=(const BaseClient&) = delete;
+    BaseClient(const BaseClient&) = delete;
+
     const std::string& apiKey() const {
         return api_key;
     }
@@ -51,6 +54,14 @@ public:
 
     std::string buildQuery(const OrderParams<M>& params) const {
         return config.buildQuery(params);
+    }
+
+    bool isConnected(const std::string& endpoint) const {
+        return ws_client.isConnected(endpoint);
+    }
+    
+    void disconnect(const std::string& endpoint) {
+        ws_client.disconnect(endpoint);
     }
 
     /// Place an order via the Config policy. Compile-time error if unsupported.
@@ -110,19 +121,6 @@ public:
         }
     }
 
-    bool isConnected(const std::string& endpoint) const {
-        return ws_client.isConnected(endpoint);
-    }
-    
-    void disconnect(const std::string& endpoint) {
-        ws_client.disconnect(endpoint);
-    }
-
-    /// Overload that forwards to Config::sendOrder with an explicit host.
-    std::string sendOrder(auto& host, const OrderParams<M>& params, Error& error = dummy_error) {
-        return config.sendOrder(host, params, error);
-    }
-
     /// Subscribe to authenticated user data feed (order updates, balance changes).
     template<typename Callback>
     void connectUserDataFeed(
@@ -134,7 +132,7 @@ public:
         if constexpr(requires(Config c, BaseClient& b, Callback cb, const std::string& p, const std::uint64_t rid, const std::uint64_t rw){c.connectUserDataFeed(b, cb, p, rid, rw); }) {
             return config.connectUserDataFeed(*this, callback, path, request_id, recv_window);
         } else {
-            logger("connectUserData is not implemented for this client configuration");
+            logger("connectUserDataFeed is not implemented for this client configuration");
         }
     }
 

@@ -54,7 +54,6 @@ endif()
 # --- trade_connector static library ---
 
 add_library(trade_connector STATIC
-    # Add .cpp files here as you create them, e.g.:
     src/websocket/client.cpp
     src/rest/client.cpp
     src/utils/signing.cpp
@@ -86,6 +85,9 @@ option(TC_BUILD_EXAMPLES "Build example programs" OFF)
 if(TC_BUILD_EXAMPLES)
     add_executable(binance_trade_feed_mixin examples/binance_trade_feed_mixin.cpp)
     target_link_libraries(binance_trade_feed_mixin PRIVATE trade_connector)
+
+    add_executable(kraken_trade_feed examples/kraken_trade_feed.cpp)
+    target_link_libraries(kraken_trade_feed PRIVATE trade_connector)
 endif()
 
 # --- Benchmarks (optional) ---

@@ -63,6 +63,8 @@ public:
         );
     }
 
+    bool send(const std::string& message) const;
+
     /// Send a text message to a connected endpoint. Returns false on failure.
     bool send(const std::string& endpoint, const std::string& message) const;
 

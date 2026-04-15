@@ -12,11 +12,10 @@ namespace trade_connector {
 /// @brief Binance exchange policy implementing REST and WebSocket operations.
 /// @tparam M Market type (SPOT, FUTURES, or GENERIC)
 template< MarketType M = MarketType::GENERIC>
-class BinancePolicy {
+struct BinancePolicy {
     using Headers = std::span<const std::pair<std::string, std::string>>;
 
-public:
-    static constexpr MarketType market_type = M;
+    //static constexpr MarketType market_type = M;
     static constexpr const char* BINANCE_WS_USER_HOST = "ws-api.testnet.binance.vision";
     static constexpr const char* BINANCE_WS_HOST = "stream.testnet.binance.vision";
     static constexpr const char* BINANCE_REST_HOST = "testnet.binance.vision";
@@ -34,16 +33,16 @@ public:
 
     ~BinancePolicy() = default;
 
-    const char* restHost() {
+    constexpr const char* restHost() const {
         return BINANCE_REST_HOST;
     }
 
-    const char* wsHost() {
+    constexpr const char* wsHost() const {
         return BINANCE_WS_HOST;
     }
 
     /// Create a listen key for user data streams (valid 60 min).
-    std::string createListenKey(auto& host) {
+    std::string createListenKey(auto& host) const {
         std::pair<std::string, std::string> headers[] = {
             {"X-MBX-APIKEY", host.apiKey()}
         };
@@ -74,7 +73,7 @@ public:
     }
 
     /// Close and invalidate a listen key.
-    std::string closeListenKey(auto& host, const std::string& listen_key){
+    std::string closeListenKey(auto& host, const std::string& listen_key) const {
         std::string target = std::format("/api/v3/userDataStream?listenKey={}", listen_key);
         std::pair<std::string, std::string> headers[] = {
             {"X-MBX-APIKEY", host.apiKey()}
@@ -83,7 +82,7 @@ public:
     }
 
     /// Retrieve account info (balances, permissions, commission rates).
-    std::string getAccountInfo(auto& host){
+    std::string getAccountInfo(auto& host) const {
         std::string query = "timestamp=" + std::to_string(currentTimeMillis())
                 + "&recvWindow=5000";
 
@@ -98,7 +97,7 @@ public:
     }
 
     /// Get open positions — futures only.
-    std::string getOpenPositions(auto& host) requires(IsFutures<M>){
+    std::string getOpenPositions(auto& host) const requires(IsFutures<M>){
         std::string query = "timestamp=" + std::to_string(currentTimeMillis())
                 + "&recvWindow=5000";
 
@@ -113,23 +112,23 @@ public:
     }
 
     /// Ping the exchange (connectivity test, no auth required).
-    std::string ping(auto& host){
+    std::string ping(auto& host) const {
         std::string target = "/api/v3/ping";
         return host.restClient().get(target);
     }
 
     /// Get server time (milliseconds since epoch). Useful for clock sync.
-    std::string getServerTime(auto& host){
+    std::string getServerTime(auto& host) const {
         return host.restClient().get("/api/v3/time");
     }
 
     /// Get exchange info (trading rules, symbol filters, rate limits).
-    std::string getExchangeInfo(auto& host){
+    std::string getExchangeInfo(auto& host) const {
         return host.restClient().get("/api/v3/exchangeInfo");
     }
 
     /// Get all open orders — spot only.
-    std::string getOpenOrders(auto& host) requires(IsSpot<M>){
+    std::string getOpenOrders(auto& host) const requires(IsSpot<M>){
         std::string query = "timestamp=" + std::to_string(currentTimeMillis())
                 + "&recvWindow=5000";
 
@@ -144,7 +143,7 @@ public:
     }
 
     /// Cancel all open orders by fetching and iterating them — spot only.
-    void cancelAllOpenOrders(auto& host) requires(IsSpot<M>){
+    void cancelAllOpenOrders(auto& host) const requires(IsSpot<M>){
         auto open_orders = getOpenOrders(host);
 
         simdjson::ondemand::parser parser;
@@ -167,20 +166,20 @@ public:
     }
 
     /// Get order book depth for a symbol. @param limit Valid: 5, 10, 20, 50, 100, 500, 1000, 5000.
-    std::string getOrderBook(auto& host, const TokenPair& symbol, int limit = 100){
+    std::string getOrderBook(auto& host, const TokenPair& symbol, const int limit = 100) const {
         std::string target = std::format("{}?symbol={}&limit={}", "/api/v3/depth", Binance::tokenPairToString[symbol], limit);
         return host.restClient().get(target);
     }
 
     /// Get recent trades for a symbol. @param limit Max 1000.
-    std::string getRecentTrades(auto& host, const TokenPair& symbol, int limit = 500){
+    std::string getRecentTrades(auto& host, const TokenPair& symbol, const int limit = 500) const {
         std::string target = std::format("{}?symbol={}&limit={}", "/api/v3/trades", Binance::tokenPairToString[symbol], limit);
         return host.restClient().get(target);
     }
 
     /// Place an order. Supports LIMIT, MARKET, STOP_LOSS, TAKE_PROFIT, OCO, etc.
     template<typename T>
-    std::string sendOrder(auto& host, const T& params) {
+    std::string sendOrder(auto& host, const T& params) const {
         // buildquery also templated since now params is different for oco, market, limit etc
         std::string query = buildQuery(params);
         std::string signature = signHMAC(host.secretKey(), query);
@@ -190,7 +189,7 @@ public:
     }
 
     /// Send order with market-type-specific params and error reporting.
-    std::string sendOrder(auto& host, const OrderParams<M>& params, Error& error = dummy_error) {
+    std::string sendOrder(auto& host, const OrderParams<M>& params, Error& error = dummy_error) const {
         std::string query = buildQuery(params);
         std::string signature = signHMAC(host.secretKey(), query);
         auto endpoint = (params.type == OrderType::OCO) ? "/api/v3/order/oco" : "/api/v3/order";
@@ -199,7 +198,7 @@ public:
     }
 
     /// Low-level: POST a pre-built signed target URL as an order.
-    std::string sendOrder(auto& host, std::string target, Error& error = dummy_error) {
+    std::string sendOrder(auto& host, const std::string target, Error& error = dummy_error) const {
         std::pair<std::string, std::string> headers[] = {
             {"X-MBX-APIKEY", host.apiKey()}
         };
@@ -208,7 +207,7 @@ public:
     }
 
     /// Build URL-encoded query string from spot order params (auto-timestamps).
-    std::string buildQuery(const OrderParams<MarketType::SPOT>& params) {
+    std::string buildQuery(const OrderParams<MarketType::SPOT>& params) const {
         std::string query;
         query.reserve(256);
 
@@ -353,7 +352,7 @@ public:
     //}
 
     /// Build URL-encoded query string from futures order params (auto-timestamps).
-    std::string buildQuery(const OrderParams<MarketType::FUTURES>& params) {
+    std::string buildQuery(const OrderParams<MarketType::FUTURES>& params) const {
         std::string query;
         query.reserve(256);
         query.append("symbol=").
@@ -400,9 +399,9 @@ public:
     std::string cancelOrder(
         auto& host,
         const TokenPair& symbol,
-        uint64_t order_id,
+        const uint64_t order_id,
         Error& error = dummy_error
-    ) {
+    ) const {
         std::string query;
         query.reserve(256);
         query.append("symbol=").append(Binance::tokenPairToString[symbol])
@@ -421,7 +420,7 @@ public:
     }
 
     /// Set leverage for a symbol — futures only (1–125x depending on symbol/tier).
-    std::string setLeverage(auto& host, const TokenPair& symbol, int leverage) requires(IsFutures<M>) {
+    std::string setLeverage(auto& host, const TokenPair& symbol, const int leverage) const requires(IsFutures<M>) {
         std::string query = "symbol=" + Binance::tokenPairToString[symbol]
             + "&leverage=" + std::to_string(leverage)
             + "&timestamp=" + std::to_string(currentTimeMillis())
@@ -438,7 +437,7 @@ public:
     }
 
     /// Set margin type ("ISOLATED" or "CROSSED") — futures only.
-    std::string setMarginType(auto& host, const TokenPair& symbol, const std::string& margin_type) requires(IsFutures<M>) {
+    std::string setMarginType(auto& host, const TokenPair& symbol, const std::string& margin_type) const requires(IsFutures<M>) {
         std::string query = "symbol=" + Binance::tokenPairToString[symbol]
             + "&marginType=" + margin_type
             + "&timestamp=" + std::to_string(currentTimeMillis())
@@ -462,7 +461,7 @@ public:
         const std::string& path = "/ws-api/v3",
         const std::uint64_t request_id = 1,
         const std::uint64_t recv_window = 5000
-    ) {
+    ) const {
         host.websocketClient().connectEndpoint(
             callback,
             BINANCE_WS_USER_HOST,
@@ -511,7 +510,7 @@ public:
 
     /// Subscribe to order-book depth updates for one or more token pairs.
     template<typename Callback>
-    void connectDepthFeed(auto& host, const std::vector<TokenPair>& tokens, Callback callback) {
+    void connectDepthFeed(auto& host, const std::vector<TokenPair>& tokens, const Callback callback) const {
         // Connect to the depth endpoint
         std::string s;
         if (tokens.size() == 1) {
@@ -535,7 +534,7 @@ public:
 
     /// Subscribe to aggregated trade updates for one or more token pairs.
     template<typename Callback>
-    void connectTradeFeed(auto& host, const std::vector<TokenPair>& tokens, Callback callback) {
+    void connectTradeFeed(auto& host, const std::vector<TokenPair>& tokens, const Callback callback) const {
         // Build string for all tokens
         // Combined streams format: /stream?streams=<symbol1>@<stream1>/<symbol2>@<stream2>
         std::string aggregate;

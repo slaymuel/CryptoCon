@@ -101,6 +101,19 @@ void Client::addConnection(
     connections[url] = std::move(conn_data);
 }
 
+bool Client::send(const std::string& message) const {
+    auto it = connections.begin();
+    if (it != connections.end() && it->second->ws) {
+        auto result = it->second->ws->send(message);
+        if (result.success) {
+            return true;
+        }
+    } else {
+        logger("No endpoints connected.");
+    }
+    return false;
+}
+
 bool Client::send(const std::string& endpoint, const std::string& message) const {
     auto it = connections.find(endpoint);
     if (it != connections.end() && it->second->ws) {
