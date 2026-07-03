@@ -51,7 +51,21 @@ public:
     void connectEndpoint(
         MessageCallback callback,
         const std::string& host,
-        const std::string& path,
+        OnWSOpen on_open = [](const std::string&) {}
+
+    ) {
+        connectEndpointImpl(
+            callback,
+            host,
+            "",
+            on_open
+        );
+    }
+
+    void connectEndpoint(
+        MessageCallback callback,
+        const std::string& host,
+        const std::string& path = "",
         OnWSOpen on_open = [](const std::string&) {}
 
     ) {

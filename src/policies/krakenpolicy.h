@@ -29,11 +29,18 @@ struct KrakenPolicy{
         host.websocketClient().connectEndpoint(
             callback,
             KRAKEN_WS_HOST,
-            "",
             [this, &host, subscribe_message](const std::string& url) {
                 host.websocketClient().send(subscribe_message);
                 host.logger("Subscribed to Kraken trade feed on " + url);
             }
+        );
+    }
+
+    template<typename Callback>
+    void connectDepthFeed(auto& host, const std::vector<TokenPair>& tokens, const Callback callback) const {
+        host.websocketClient().connectEndpoint(
+            callback,
+            KRAKEN_WS_HOST
         );
     }
 };
