@@ -5,11 +5,21 @@
 
 namespace trade_connector {
 
+template<typename Config>
+struct ConfigMarketType {
+    static constexpr MarketType value = MarketType::GENERIC;
+};
+
+template<template<MarketType> class Policy, MarketType M>
+struct ConfigMarketType<Policy<M>> {
+    static constexpr MarketType value = M;
+};
+
 /// @brief CRTP base providing REST, WebSocket and policy-dispatched trading operations.
 /// @tparam Derived  SyncClient or AsyncClient (CRTP leaf)
 /// @tparam Config   Exchange policy (e.g. BinancePolicy<M>)
-/// @tparam M        Market type used for OrderParams specialisation
-template<typename Derived, typename Config, MarketType M = MarketType::GENERIC>
+/// @tparam M        Market type used for OrderParams specialisation (inferred from Config by default)
+template<typename Derived, typename Config, MarketType M = ConfigMarketType<Config>::value>
 class BaseClient{
 
 public:
